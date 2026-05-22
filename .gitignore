@@ -4,3 +4,7 @@
 
 /.vs/electrostat.slnx
 /obj
+/.vs
+/bin/Debug/net10.0
+/electrostat_UI/bin/Debug/net10.0
+/electrostat_UI/obj

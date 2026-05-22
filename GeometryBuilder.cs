@@ -1,177 +1,34 @@
-﻿using System;
+﻿using GeometryLib;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
+using System.Net.Sockets;
 using System.Text;
+using System.Xml.Linq;
+using TfmrLib;
+using TfmrLib.FEM;
 
 namespace electrostat
 {
     public static class GeometryBuilder
     {
-        // ----------------------------
-        // Geometry helpers
-        // ----------------------------
-
-        /// <summary>
-        /// Add a rectangle surface in the r-z plane (z=0 out-of-plane).
-        /// </summary>
-        public static int AddRect(double r0, double z0, double w, double h)
-        {
-            return Gmsh.Model.Occ.AddRectangle(r0, z0, 0.0, w, h);
-        }
-
-        /// <summary>
-        /// Create a rectangle surface and apply independent fillets at each corner.
-        /// (r0, z0) is lower-left.
-        /// Returns surface tag.
-        /// </summary>
-        public static int AddRectWithCornerRadii(
-            double r0, double z0, double w, double h,
-            double rTL, double rTR, double rBR, double rBL)
-        {
-            double startX = r0 + rBL;
-            double startY = z0;
-
-            int currentTag = Gmsh.Model.Occ.AddPoint(startX, startY, 0);
-            int startTag = currentTag;
-
-            var loopCurves = new List<int>();
-
-            // --- 1. Bottom Edge: BL Exit -> BR Entry ---
-            double brEntryX = r0 + w - rBR;
-            double brEntryY = z0;
-
-            if (Math.Abs(brEntryX - startX) > 1e-6)
-            {
-                int pNext = Gmsh.Model.Occ.AddPoint(brEntryX, brEntryY, 0);
-                loopCurves.Add(Gmsh.Model.Occ.AddLine(currentTag, pNext));
-                currentTag = pNext;
-            }
-
-            // --- 2. BR Corner: BR Entry -> BR Exit ---
-            if (rBR > 0)
-            {
-                double brExitX = r0 + w;
-                double brExitY = z0 + rBR;
-                int pExit = Gmsh.Model.Occ.AddPoint(brExitX, brExitY, 0);
-                int center = Gmsh.Model.Occ.AddPoint(r0 + w - rBR, z0 + rBR, 0);
-                loopCurves.Add(Gmsh.Model.Occ.AddCircleArc(currentTag, center, pExit));
-                currentTag = pExit;
-            }
-
-            // --- 3. Right Edge: BR Exit -> TR Entry ---
-            double trEntryX = r0 + w;
-            double trEntryY = z0 + h - rTR;
-
-            if (Math.Abs(trEntryY - (z0 + rBR)) > 1e-6)
-            {
-                int pNext = Gmsh.Model.Occ.AddPoint(trEntryX, trEntryY, 0);
-                loopCurves.Add(Gmsh.Model.Occ.AddLine(currentTag, pNext));
-                currentTag = pNext;
-            }
-
-            // --- 4. TR Corner: TR Entry -> TR Exit ---
-            if (rTR > 0)
-            {
-                double trExitX = r0 + w - rTR;
-                double trExitY = z0 + h;
-                int pExit = Gmsh.Model.Occ.AddPoint(trExitX, trExitY, 0);
-                int center = Gmsh.Model.Occ.AddPoint(r0 + w - rTR, z0 + h - rTR, 0);
-                loopCurves.Add(Gmsh.Model.Occ.AddCircleArc(currentTag, center, pExit));
-                currentTag = pExit;
-            }
-
-            // --- 5. Top Edge: TR Exit -> TL Entry ---
-            double tlEntryX = r0 + rTL;
-            double tlEntryY = z0 + h;
-
-            if (Math.Abs(tlEntryX - (r0 + w - rTR)) > 1e-6)
-            {
-                int pNext = Gmsh.Model.Occ.AddPoint(tlEntryX, tlEntryY, 0);
-                loopCurves.Add(Gmsh.Model.Occ.AddLine(currentTag, pNext));
-                currentTag = pNext;
-            }
-
-            // --- 6. TL Corner: TL Entry -> TL Exit ---
-            if (rTL > 0)
-            {
-                double tlExitX = r0;
-                double tlExitY = z0 + h - rTL;
-                int pExit = Gmsh.Model.Occ.AddPoint(tlExitX, tlExitY, 0);
-                int center = Gmsh.Model.Occ.AddPoint(r0 + rTL, z0 + h - rTL, 0);
-                loopCurves.Add(Gmsh.Model.Occ.AddCircleArc(currentTag, center, pExit));
-                currentTag = pExit;
-            }
-
-            // --- 7. Left Edge: TL Exit -> BL Entry ---
-            double blEntryX = r0;
-            double blEntryY = z0 + rBL;
-
-            if (Math.Abs(blEntryY - (z0 + h - rTL)) > 1e-6)
-            {
-                if (rBL == 0)
-                {
-                    loopCurves.Add(Gmsh.Model.Occ.AddLine(currentTag, startTag));
-                    currentTag = startTag;
-                }
-                else
-                {
-                    int pNext = Gmsh.Model.Occ.AddPoint(blEntryX, blEntryY, 0);
-                    loopCurves.Add(Gmsh.Model.Occ.AddLine(currentTag, pNext));
-                    currentTag = pNext;
-                }
-            }
-
-            // --- 8. BL Corner: BL Entry -> BL Exit (Start) ---
-            if (rBL > 0)
-            {
-                int center = Gmsh.Model.Occ.AddPoint(r0 + rBL, z0 + rBL, 0);
-                loopCurves.Add(Gmsh.Model.Occ.AddCircleArc(currentTag, center, startTag));
-                currentTag = startTag;
-            }
-
-            // Create loop and surface
-            int loop = Gmsh.Model.Occ.AddCurveLoop(loopCurves.ToArray());
-            int s = Gmsh.Model.Occ.AddPlaneSurface(new[] { loop });
-
-            return s;
-        }
-
-        public static (double x, double y) PointCom(int ptag)
-        {
-            Gmsh.Model.Occ.GetCenterOfMass(0, ptag, out double x, out double y, out double _);
-            return (x, y);
-        }
-
-        public static (double x, double y) CurveCom(int ctag)
-        {
-            Gmsh.Model.Occ.GetCenterOfMass(1, ctag, out double x, out double y, out double _);
-            return (x, y);
-        }
-
-        public static (double x, double y) SurfCom(int stag)
-        {
-            Gmsh.Model.Occ.GetCenterOfMass(2, stag, out double x, out double y, out double _);
-            return (x, y);
-        }
-
-        public static bool InsideRect(double cx, double cy, double r0, double z0, double w, double h, double pad = 1.0)
-        {
-            return (r0 - pad <= cx && cx <= r0 + w + pad) && (z0 - pad <= cy && cy <= z0 + h + pad);
-        }
+        public static Geometry geometry = new();
+        public static FEMProblem? problem = new();
 
         /// <summary>
         /// Create rectangle for the winding block and fillet only the top-left and top-right corners.
         /// Returns the surface tag (pre-boolean).
         /// </summary>
-        public static int TopFilletBlock(WindingBlock b)
+        public static GeomSurface TopFilletBlock(WindingBlock b)
         {
-            return AddRectWithCornerRadii(b.R0, b.ZBottom, b.Width, b.Height, b.FilletR, b.FilletR, 0.0, 0.0);
+            return geometry.AddRectWithCornerRadii(b.R0, b.ZBottom, b.Width, b.Height, b.FilletR, b.FilletR, 0.0, 0.0);
         }
 
         /// <summary>
         /// Build a pressboard barrier, optionally with tapered ends.
         /// </summary>
-        public static int AddPressboardBarrier(PressboardBarrier pb)
+        public static GeomSurface AddPressboardBarrier(PressboardBarrier pb)
         {
             double r0 = pb.R0;
             double z0 = pb.ZBottom;
@@ -181,7 +38,8 @@ namespace electrostat
             // If no tapers, just return a rectangle
             if (pb.TaperTop == null && pb.TaperBottom == null)
             {
-                return AddRect(r0, z0, t, h);
+                var pb_bdry = geometry.AddRectangle(r0 + t / 2.0, z0 + h / 2.0, h, t);
+                return geometry.AddSurface(pb_bdry);
             }
 
             // Build the polygon manually
@@ -259,18 +117,18 @@ namespace electrostat
             points = filtered;
 
             // Create GMSH points
-            var ptTags = points.Select(p => Gmsh.Model.Occ.AddPoint(p.r, p.z, 0)).ToList();
+            var pts = points.Select(p => geometry.AddPoint(p.r, p.z)).ToArray();
 
             // Create lines connecting consecutive points
-            var curves = new List<int>();
-            int n = ptTags.Count;
+            var curves = new List<GeomLine>();
+            int n = pts.Length;
             for (int i = 0; i < n; i++)
             {
-                curves.Add(Gmsh.Model.Occ.AddLine(ptTags[i], ptTags[(i + 1) % n]));
+                curves.Add(geometry.AddLine(pts[i], pts[(i + 1) % n]));
             }
 
-            int loop = Gmsh.Model.Occ.AddCurveLoop(curves.ToArray());
-            int s = Gmsh.Model.Occ.AddPlaneSurface(new[] { loop });
+            GeomLineLoop loop = geometry.AddLineLoop(curves.ToArray());
+            GeomSurface s =geometry.AddSurface(loop);
             return s;
         }
 
@@ -278,7 +136,7 @@ namespace electrostat
         /// Build an L-shaped angle ring with rounded corners, respecting orientation signs.
         /// Optionally includes a taper at the tip of the vertical leg.
         /// </summary>
-        public static int AddAngleRing(AngleRing ar)
+        public static GeomSurface AddAngleRing(AngleRing ar)
         {
             double r0 = ar.R0;
             double z0 = ar.ZCorner;
@@ -305,17 +163,17 @@ namespace electrostat
             // Points for the vertical leg tip region
             double zTip = z0 + Sz * H;
 
-            var curves = new List<int>();
-            var tipCurves = new List<int>();
-            int p1, p8;
-            int? innerTaperCurve = null;
-            int? outerTaperCurve = null;
+            var curves = new List<GeomEntity>();
+            var tipCurves = new List<GeomLine>();
+            GeomPoint p1, p8;
+            GeomLine? innerTaperCurve = null;
+            GeomLine? outerTaperCurve = null;
 
             if (taper == null)
             {
-                p1 = Gmsh.Model.Occ.AddPoint(r0 + Sr * Tv, zTip, 0);
-                p8 = Gmsh.Model.Occ.AddPoint(r0, zTip, 0);
-                tipCurves.Add(Gmsh.Model.Occ.AddLine(p1, p8));
+                p1 = geometry.AddPoint(r0 + Sr * Tv, zTip);
+                p8 = geometry.AddPoint(r0, zTip);
+                tipCurves.Add(geometry.AddLine(p1, p8));
             }
             else
             {
@@ -328,113 +186,105 @@ namespace electrostat
                     double rInnerTip = r0 + Sr * tEnd;
                     double rInnerTrans = r0 + Sr * Tv;
 
-                    int p1Tip = Gmsh.Model.Occ.AddPoint(rInnerTip, zTip, 0);
-                    int p1Trans = Gmsh.Model.Occ.AddPoint(rInnerTrans, zTaperStart, 0);
-                    p8 = Gmsh.Model.Occ.AddPoint(r0, zTip, 0);
+                    GeomPoint p1Tip = geometry.AddPoint(rInnerTip, zTip);
+                    GeomPoint p1Trans = geometry.AddPoint(rInnerTrans, zTaperStart);
+                    p8 = geometry.AddPoint(r0, zTip);
 
                     p1 = p1Trans;
-                    tipCurves.Add(Gmsh.Model.Occ.AddLine(p1Tip, p8));
-                    innerTaperCurve = Gmsh.Model.Occ.AddLine(p1Trans, p1Tip);
+                    tipCurves.Add(geometry.AddLine(p1Tip, p8));
+                    innerTaperCurve = geometry.AddLine(p1Trans, p1Tip);
                 }
                 else // "outer"
                 {
                     double rOuterTip = r0 + Sr * (Tv - tEnd);
                     double rOuterTrans = r0;
 
-                    p1 = Gmsh.Model.Occ.AddPoint(r0 + Sr * Tv, zTip, 0);
-                    int p8Tip = Gmsh.Model.Occ.AddPoint(rOuterTip, zTip, 0);
-                    int p8Trans = Gmsh.Model.Occ.AddPoint(rOuterTrans, zTaperStart, 0);
+                    p1 = geometry.AddPoint(r0 + Sr * Tv, zTip);
+                    GeomPoint p8Tip = geometry.AddPoint(rOuterTip, zTip);
+                    GeomPoint p8Trans = geometry.AddPoint(rOuterTrans, zTaperStart);
 
                     p8 = p8Trans;
-                    tipCurves.Add(Gmsh.Model.Occ.AddLine(p1, p8Tip));
-                    outerTaperCurve = Gmsh.Model.Occ.AddLine(p8Tip, p8Trans);
+                    tipCurves.Add(geometry.AddLine(p1, p8Tip));
+                    outerTaperCurve = geometry.AddLine(p8Tip, p8Trans);
                 }
             }
 
             // 2. Vertical Leg Tangent (Inner)
-            int p2 = Gmsh.Model.Occ.AddPoint(r0 + Sr * Tv, Cy, 0);
+            GeomPoint p2 = geometry.AddPoint(r0 + Sr * Tv, Cy);
 
             // Center point for fillet arcs
-            int pc = Gmsh.Model.Occ.AddPoint(Cx, Cy, 0);
+            GeomPoint pc = geometry.AddPoint(Cx, Cy);
 
             // 3. Horizontal Leg Tangent (Inner)
-            int p3 = Gmsh.Model.Occ.AddPoint(Cx, z0 + Sz * Th, 0);
+            GeomPoint p3 = geometry.AddPoint(Cx, z0 + Sz * Th);
 
             // 4. Horizontal Leg Tip (Inner)
-            int p4 = Gmsh.Model.Occ.AddPoint(r0 + Sr * W, z0 + Sz * Th, 0);
+            GeomPoint p4 = geometry.AddPoint(r0 + Sr * W, z0 + Sz * Th);
 
             // 5. Horizontal Leg Tip (Outer)
-            int p5 = Gmsh.Model.Occ.AddPoint(r0 + Sr * W, z0, 0);
+            GeomPoint p5 = geometry.AddPoint(r0 + Sr * W, z0);
 
             // 6. Horizontal Leg Tangent (Outer)
-            int p6 = Gmsh.Model.Occ.AddPoint(Cx, z0, 0);
+            GeomPoint p6 = geometry.AddPoint(Cx, z0);
 
             // 7. Vertical Leg Tangent (Outer)
-            int p7 = Gmsh.Model.Occ.AddPoint(r0, Cy, 0);
+            GeomPoint p7 = geometry.AddPoint(r0, Cy, 0);
 
             // Build curves CCW around the L-shape
             // Tip of Vertical Leg
             curves.AddRange(tipCurves);
 
-            if (taper != null && taper.Value.Side == "outer" && outerTaperCurve.HasValue)
+            if (taper != null && taper.Value.Side == "outer" && outerTaperCurve is not null)
             {
-                curves.Add(outerTaperCurve.Value);
+                curves.Add(outerTaperCurve);
             }
 
             // Outer Vertical Edge (p8 to p7)
-            curves.Add(Gmsh.Model.Occ.AddLine(p8, p7));
+            curves.Add(geometry.AddLine(p8, p7));
 
             // Outer Corner Arc (p7 to p6)
-            curves.Add(Gmsh.Model.Occ.AddCircleArc(p7, pc, p6));
+            curves.Add(geometry.AddCircleArc(p7, pc, p6));
 
             // Outer Horizontal Edge (p6 to p5)
-            curves.Add(Gmsh.Model.Occ.AddLine(p6, p5));
+            curves.Add(geometry.AddLine(p6, p5));
 
             // Tip of Horizontal Leg
-            curves.Add(Gmsh.Model.Occ.AddLine(p5, p4));
+            curves.Add(geometry.AddLine(p5, p4));
 
             // Inner Horizontal Edge (p4 to p3)
-            curves.Add(Gmsh.Model.Occ.AddLine(p4, p3));
+            curves.Add(geometry.AddLine(p4, p3));
 
             // Inner Corner Arc (p3 to p2)
-            curves.Add(Gmsh.Model.Occ.AddCircleArc(p3, pc, p2));
+            curves.Add(geometry.AddCircleArc(p3, pc, p2));
 
             // Inner Vertical Edge (p2 to p1)
-            if (taper != null && taper.Value.Side == "inner" && innerTaperCurve.HasValue)
+            if (taper != null && taper.Value.Side == "inner" && innerTaperCurve is not null)
             {
-                curves.Add(Gmsh.Model.Occ.AddLine(p2, p1));
-                curves.Add(innerTaperCurve.Value);
+                curves.Add(geometry.AddLine(p2, p1));
+                curves.Add(innerTaperCurve);
             }
             else
             {
-                curves.Add(Gmsh.Model.Occ.AddLine(p2, p1));
+                curves.Add(geometry.AddLine(p2, p1));
             }
 
-            int loop = Gmsh.Model.Occ.AddCurveLoop(curves.ToArray());
-            int s = Gmsh.Model.Occ.AddPlaneSurface(new[] { loop });
+            GeomLineLoop loop = geometry.AddLineLoop(curves.ToArray());
+            GeomSurface s = geometry.AddSurface(loop);
 
             return s;
-        }
-
-        public static (double r, double z, double w, double h) AngleRingBbox(AngleRing ar)
-        {
-            double[] rPts = { ar.R0, ar.R0 + ar.Wh };
-            double[] zPts = { ar.ZCorner, ar.ZCorner + ar.Hv };
-            return (rPts.Min(), zPts.Min(), Math.Abs(ar.Wh), Math.Abs(ar.Hv));
         }
 
         /// <summary>
         /// Returns (metal_surface_tag, paper_surface_tags)
         /// </summary>
-        public static (int metal, List<int> paper) AddStaticRing(StaticRing sr)
+        public static (GeomSurface metal, GeomSurface paper) AddStaticRing(StaticRing sr)
         {
             double z0M = sr.ZBottom;
 
-            int metal = AddRectWithCornerRadii(
+            GeomSurface metal = geometry.AddRectWithCornerRadii(
                 r0: sr.R0, z0: z0M, w: sr.Width, h: sr.Height,
                 rTL: sr.RTL, rTR: sr.RTR, rBR: sr.RBR, rBL: sr.RBL
             );
-            Gmsh.Model.Occ.Synchronize();
 
             double t = sr.TPaper;
             double r0P = sr.R0 - t;
@@ -442,456 +292,636 @@ namespace electrostat
             double wP = sr.Width + 2 * t;
             double hP = sr.Height + 2 * t;
 
-            int paperOuter = AddRectWithCornerRadii(
+            GeomSurface paper = geometry.AddRectWithCornerRadii(
                 r0: r0P, z0: z0P, w: wP, h: hP,
                 rTL: sr.RTL + t, rTR: sr.RTR + t, rBR: sr.RBR + t, rBL: sr.RBL + t
             );
-            Gmsh.Model.Occ.Synchronize();
 
-            Gmsh.Model.Occ.Cut(
-                new[] { (2, paperOuter) },
-                new[] { (2, metal) },
-                out var outDimTags,
-                out var _,
-                removeObject: true,
-                removeTool: false
-            );
-            Gmsh.Model.Occ.Synchronize();
+            paper.Holes.Add(metal.Boundary);
 
-            var paperTags = outDimTags.Where(dt => dt.dim == 2).Select(dt => dt.tag).ToList();
-            if (paperTags.Count == 0)
-            {
-                throw new InvalidOperationException($"StaticRing {sr.Name}: cut produced no paper surfaces.");
-            }
-            return (metal, paperTags);
+            return (metal, paper);
         }
-
-        public static (double r, double z, double w, double h) StaticRingMetalBbox(StaticRing sr)
-        {
-            return (sr.R0, sr.ZBottom, sr.Width, sr.Height);
-        }
-
-        public static (double r, double z, double w, double h) StaticRingPaperBbox(StaticRing sr)
-        {
-            double t = sr.TPaper;
-            return (sr.R0 - t, sr.ZBottom - t, sr.Width + 2 * t, sr.Height + 2 * t);
-        }
-
-        // ----------------------------
-        // Physical group helpers
-        // ----------------------------
 
         public static List<int> Uniq(IEnumerable<int> seq)
         {
             return seq.Distinct().OrderBy(x => x).ToList();
         }
 
-        public static List<int> BoundaryCurvesOfSurfaces(IEnumerable<int> surfs)
+        /// <summary>
+        /// True if the entity is a straight line segment that lies entirely on one of the
+        /// four truncated-domain edges (i.e., a "cut" introduced by clipping rather than a
+        /// real conductor / material interface). Such segments must NOT inherit the
+        /// conductor's Dirichlet tag, otherwise they collide with the domain's own BC at
+        /// shared DOFs.
+        /// </summary>
+        private static bool IsOnDomainEdge(GeomEntity ent, Domain domain)
         {
-            var entities = surfs.Select(s => (2, s)).ToArray();
-            Gmsh.Model.GetBoundary(entities, out var boundary, oriented: false, recursive: false);
-            return Uniq(boundary.Where(b => b.dim == 1).Select(b => b.tag));
+            if (ent is not GeomLine line) return false; // arcs cannot lie on a straight edge
+            const double tol = 1e-7;
+            // Horizontal edges: both endpoints at z = ZLower or z = ZUpper
+            bool onLower = Math.Abs(line.pt1.y - domain.ZLower) < tol
+                        && Math.Abs(line.pt2.y - domain.ZLower) < tol;
+            bool onUpper = Math.Abs(line.pt1.y - domain.ZUpper) < tol
+                        && Math.Abs(line.pt2.y - domain.ZUpper) < tol;
+            // Vertical edges: both endpoints at r = RInner or r = ROuter
+            bool onInner = Math.Abs(line.pt1.x - domain.RInner) < tol
+                        && Math.Abs(line.pt2.x - domain.RInner) < tol;
+            bool onOuter = Math.Abs(line.pt1.x - domain.ROuter) < tol
+                        && Math.Abs(line.pt2.x - domain.ROuter) < tol;
+            return onLower || onUpper || onInner || onOuter;
         }
 
-        public static int AddPhys(int dim, List<int> tags, string name, int tag)
+        /// <summary>
+        /// Remove line loops, lines, and arcs from the geometry that are no longer referenced
+        /// by any surface (as boundary or hole). Necessary after clipping so gmsh does not emit
+        /// the original unclipped primitives that lie outside the domain.
+        /// Points are intentionally left in place (they are harmless extras in gmsh output).
+        /// </summary>
+        private static void PruneUnreferencedEntities(Geometry geom)
         {
-            if (tags.Count == 0)
+            // Collect every line loop that is still referenced by a surface.
+            var keepLoops = new HashSet<GeomLineLoop>(ReferenceEqualityComparer.Instance);
+            foreach (var surface in geom.Surfaces)
             {
-                throw new InvalidOperationException($"Physical group '{name}' is empty.");
+                if (surface.Boundary != null)
+                    keepLoops.Add(surface.Boundary);
+                foreach (var hole in surface.Holes)
+                {
+                    if (hole != null)
+                        keepLoops.Add(hole);
+                }
             }
-            int pg = Gmsh.Model.AddPhysicalGroup(dim, tags.ToArray(), tag);
-            Gmsh.Model.SetPhysicalName(dim, pg, name);
-            return pg;
+
+            // First, strip degenerate edges (zero-length lines / arcs whose start == end)
+            // from every surviving loop. Without this, gmsh emits self-loop edges and
+            // reports warnings like "Impossible to recover edge N N".
+            static bool IsDegenerateLine(GeomLine l) => ReferenceEquals(l.pt1, l.pt2);
+            static bool IsDegenerateArc(GeomArc a) => ReferenceEquals(a.StartPt, a.EndPt);
+
+            foreach (var loop in keepLoops)
+            {
+                loop.Boundary.RemoveAll(e =>
+                    (e is GeomLine gl && IsDegenerateLine(gl)) ||
+                    (e is GeomArc ga && IsDegenerateArc(ga)));
+            }
+
+            // Collect every line / arc reachable from those loops.
+            var keepLines = new HashSet<GeomLine>(ReferenceEqualityComparer.Instance);
+            var keepArcs = new HashSet<GeomArc>(ReferenceEqualityComparer.Instance);
+            foreach (var loop in keepLoops)
+            {
+                foreach (var entity in loop.Boundary)
+                {
+                    if (entity is GeomLine line) keepLines.Add(line);
+                    else if (entity is GeomArc arc) keepArcs.Add(arc);
+                }
+            }
+
+            geom.LineLoops.RemoveAll(l => !keepLoops.Contains(l));
+
+            // Use RemoveLine / RemoveArc rather than RemoveAll directly so the dedup caches
+            // in `Geometry` are kept in sync. Snapshot first to avoid mutating during iteration.
+            foreach (var l in geom.Lines.ToList())
+            {
+                if (!keepLines.Contains(l) || IsDegenerateLine(l))
+                    geom.RemoveLine(l);
+            }
+            foreach (var a in geom.Arcs.ToList())
+            {
+                if (!keepArcs.Contains(a) || IsDegenerateArc(a))
+                    geom.RemoveArc(a);
+            }
+
+            // Collect every point reachable from the surviving lines and arcs.
+            var keepPoints = new HashSet<GeomPoint>(ReferenceEqualityComparer.Instance);
+            foreach (var line in geom.Lines)
+            {
+                if (line.pt1 != null) keepPoints.Add(line.pt1);
+                if (line.pt2 != null) keepPoints.Add(line.pt2);
+            }
+            foreach (var arc in geom.Arcs)
+            {
+                if (arc.StartPt != null) keepPoints.Add(arc.StartPt);
+                if (arc.EndPt != null) keepPoints.Add(arc.EndPt);
+            }
+
+            geom.Points.RemoveWhere(p => !keepPoints.Contains(p));
         }
 
-        public static List<int> MappedChildrenSurfaces(IEnumerable<int> seedSurfs, double eps = 1e-3)
+        /// <summary>
+        /// For every surviving <see cref="GeomLine"/>, finds any <see cref="GeomPoint"/> lying on
+        /// the line's interior (within the geometry's point tolerance) and splits the line at
+        /// those points. Each containing <see cref="GeomLineLoop"/> has the original line replaced
+        /// in‑place with the resulting sub‑line sequence, preserving traversal direction.
+        ///
+        /// Why this is needed: gmsh constrained Delaunay cannot insert two boundary edges that
+        /// overlap geometrically without sharing endpoints. After splitting, both loops that
+        /// happen to lie on the same line segment share the *same* sub‑line instance (because
+        /// <see cref="Geometry.AddLine"/> deduplicates), giving gmsh a conforming boundary.
+        ///
+        /// Only lines are split here — arcs are left alone.
+        /// </summary>
+        private static void SplitLinesAtIncidentPoints(Geometry geom)
         {
-            var kids = new List<int>();
-            foreach (int s in seedSurfs)
+            static (GeomPoint? start, GeomPoint? end) GetEndpoints(GeomEntity e) => e switch
             {
-                var (cx, cy) = SurfCom(s);
-                Gmsh.Model.GetEntitiesInBoundingBox(
-                    cx - eps, cy - eps, -1e-6,
-                    cx + eps, cy + eps, 1e-6,
-                    out var hits, 2);
-                kids.AddRange(hits.Where(h => h.dim == 2).Select(h => h.tag));
+                GeomLine l => (l.pt1, l.pt2),
+                GeomArc a => (a.StartPt, a.EndPt),
+                _ => (null, null),
+            };
+
+            static bool DetermineForward(GeomLineLoop loop, int idx, GeomLine line)
+            {
+                int n = loop.Boundary.Count;
+                if (n <= 1) return true;
+
+                // Prefer the previous entity: its exit point is the entry point of `line`.
+                var prev = loop.Boundary[(idx - 1 + n) % n];
+                var (ps, pe) = GetEndpoints(prev);
+                if (ReferenceEquals(ps, line.pt1) || ReferenceEquals(pe, line.pt1)) return true;
+                if (ReferenceEquals(ps, line.pt2) || ReferenceEquals(pe, line.pt2)) return false;
+
+                // Fall back to the next entity: its entry point is the exit point of `line`.
+                var next = loop.Boundary[(idx + 1) % n];
+                var (ns, ne) = GetEndpoints(next);
+                if (ReferenceEquals(ns, line.pt2) || ReferenceEquals(ne, line.pt2)) return true;
+                if (ReferenceEquals(ns, line.pt1) || ReferenceEquals(ne, line.pt1)) return false;
+
+                return true;
             }
-            return Uniq(kids);
+
+            double tol = geom.PointTolerance;
+
+            // Iterate until no more splits happen. Each iteration strictly reduces the set of
+            // lines that still have interior points (sub‑lines are shorter than their parent),
+            // so this converges; the safety cap is just defensive.
+            int safety = 0;
+            bool changed = true;
+            while (changed && safety++ < 32)
+            {
+                changed = false;
+
+                // Snapshot the line list — we mutate geom.Lines during the loop.
+                var linesToCheck = geom.Lines.ToList();
+
+                foreach (var line in linesToCheck)
+                {
+                    double dx = line.pt2.x - line.pt1.x;
+                    double dy = line.pt2.y - line.pt1.y;
+                    double lenSq = dx * dx + dy * dy;
+                    if (lenSq <= tol * tol) continue; // degenerate; already filtered, but be safe
+
+                    // Find every point that lies strictly on the interior of this segment.
+                    var hits = new List<(GeomPoint pt, double t)>();
+                    foreach (var p in geom.Points)
+                    {
+                        if (ReferenceEquals(p, line.pt1) || ReferenceEquals(p, line.pt2)) continue;
+
+                        double vx = p.x - line.pt1.x;
+                        double vy = p.y - line.pt1.y;
+                        double t = (vx * dx + vy * dy) / lenSq;
+                        if (t <= 1e-12 || t >= 1.0 - 1e-12) continue;
+
+                        // Perpendicular distance to the line.
+                        double projX = line.pt1.x + t * dx;
+                        double projY = line.pt1.y + t * dy;
+                        double pdx = p.x - projX;
+                        double pdy = p.y - projY;
+                        if ((pdx * pdx + pdy * pdy) > tol * tol) continue;
+
+                        hits.Add((p, t));
+                    }
+
+                    if (hits.Count == 0) continue;
+
+                    // Sort by parametric position along the line so the resulting sub‑lines
+                    // are emitted in geometric order from pt1 to pt2.
+                    hits.Sort((a, b) => a.t.CompareTo(b.t));
+
+                    // Build the natural (forward) sub‑line sequence: pt1 -> p1 -> p2 -> ... -> pt2.
+                    // AddLine deduplicates by point ID pair, so coincident edges from other loops
+                    // will collapse onto these sub‑lines automatically.
+                    var sequence = new List<GeomLine>(hits.Count + 1);
+                    GeomPoint prevPt = line.pt1;
+                    foreach (var (p, _) in hits)
+                    {
+                        if (ReferenceEquals(prevPt, p)) continue; // shouldn't happen, but safe
+                        sequence.Add(geom.AddLine(prevPt, p));
+                        prevPt = p;
+                    }
+                    if (!ReferenceEquals(prevPt, line.pt2))
+                        sequence.Add(geom.AddLine(prevPt, line.pt2));
+
+                    if (sequence.Count == 0) continue;
+
+                    // Propagate the parent's Tag (e.g., a domain-edge "Lower_Bdry" tag) onto
+                    // every sub-line. Without this, splitting the bottom domain edge into
+                    // pieces would erase its physical-curve tag because the new sub-line
+                    // instances default to Tag=0 and the original line is about to be removed.
+                    if (line.Tag > 0)
+                    {
+                        foreach (var sub in sequence)
+                        {
+                            if (sub.Tag == 0) sub.Tag = line.Tag;
+                        }
+                    }
+
+                    // Replace the line in every loop that referenced it, preserving direction.
+                    foreach (var loop in geom.LineLoops)
+                    {
+                        for (int i = 0; i < loop.Boundary.Count; i++)
+                        {
+                            if (!ReferenceEquals(loop.Boundary[i], line)) continue;
+
+                            bool forward = DetermineForward(loop, i, line);
+                            IEnumerable<GeomEntity> sub = forward ? sequence : Enumerable.Reverse(sequence);
+
+                            loop.Boundary.RemoveAt(i);
+                            loop.Boundary.InsertRange(i, sub);
+
+                            // Skip past the inserted sub‑lines; none of them are the original `line`.
+                            i += sequence.Count - 1;
+                        }
+                    }
+
+                    // Drop the original line; the new sub‑lines have replaced it everywhere.
+                    // Use RemoveLine so the deduplication cache is also evicted — otherwise a
+                    // later AddLine(pt1, pt2) call would hand back this dead instance and the
+                    // gmsh writer would fail to find a matching GmshLine for it.
+                    geom.RemoveLine(line);
+                    changed = true;
+                }
+            }
         }
 
         // ----------------------------
         // GetDP Analysis
         // ----------------------------
 
-        public static int RunGetDPAnalysis(
-            string mshPath,
-            string resPath,
-            string proFile = "electrostatics_axisym.pro",
-            bool verbose = true)
+        public static int RunGetDPAnalysis()
         {
-            string resDir = Path.GetDirectoryName(resPath);
-            if (string.IsNullOrEmpty(resDir)) resDir = ".";
-            Directory.CreateDirectory(resDir);
-
-            var args = new[]
-            {
-                proFile,
-                "-setstring", "modelPath", $"{resDir}/",
-                "-msh", mshPath,
-                "-solve", "Electrostatics_v",
-                "-pos", "Map"
-            };
-
-            if (verbose)
-            {
-                Console.WriteLine($"Running GetDP: getdp {string.Join(" ", args)}");
-            }
-
-            var psi = new ProcessStartInfo("getdp", string.Join(" ", args))
-            {
-                RedirectStandardOutput = !verbose,
-                RedirectStandardError = !verbose,
-                UseShellExecute = false
-            };
-
-            using var process = Process.Start(psi);
-            process?.WaitForExit();
-
-            int exitCode = process?.ExitCode ?? -1;
-
-            if (exitCode == 0 && verbose)
-            {
-                Console.WriteLine($"GetDP analysis completed successfully. Results in: {resPath}");
-            }
-            else if (exitCode != 0)
-            {
-                Console.WriteLine($"GetDP analysis failed with exit code {exitCode}");
-            }
-
-            return exitCode;
+            //problem?.Filename = "getdp/problem.pro";
+            problem?.Solve();
+            return 0;
         }
 
         // ----------------------------
         // Build
         // ----------------------------
 
-        public static void BuildModel(
-            Domain domain,
-            List<WindingBlock> windings,
-            List<PressboardBarrier> pressboards,
-            List<AngleRing> angleRings,
-            List<StaticRing> staticRings,
-            double lc = 1.0,
-            string mshOut = "msh/geom.msh",
-            bool verbose = true)
+        /// <summary>
+        /// Reset the static geometry to an empty state. Useful when building a
+        /// new model (e.g. for visualization) without accumulating prior entities.
+        /// </summary>
+        public static void ResetGeometry()
         {
-            Gmsh.Initialize();
-            Gmsh.Option.SetNumber("General.Terminal", verbose ? 1 : 0);
-            Gmsh.Model.Add("axisym_param");
+            geometry = new Geometry();
+        }
+
+        /// <summary>
+        /// Build the geometry without invoking gmsh / writing a mesh file.
+        /// Returns the populated <see cref="Geometry"/> for visualization.
+        /// </summary>
+        public static Geometry BuildGeometryOnly(
+            ElectrostatCase _case,
+            bool clipToDomain = true)
+        {
+            ResetGeometry();
+            BuildModel(_case, lc: 5.0, mshOut: null, clipToDomain: clipToDomain, generateMesh: false);
+            return geometry;
+        }
+
+        public static void BuildModel(
+            ElectrostatCase _case,
+            double lc = 100.0,
+            string? mshOut = "msh/geom.msh",
+            bool clipToDomain = true,
+            bool generateMesh = true)
+        {
+            var domain = _case.Domain;
+            var windings = _case.Windings;
+            var pressboards = _case.Pressboards;
+            var angleRings = _case.AngleRings;
+            var staticRings = _case.StaticRings;
+            var voltages = _case.Voltages;
+
+            //Gmsh.Model.Add("axisym_param");
+            MeshGenerator gmsh = new MeshGenerator();
+
+            TagManager tags = new TagManager();
+   
+            if (false)
+            {
+                problem = new GetDPAxiElecProblem();
+            }
+            else
+            {
+                problem = new MFEMProblem();
+            }
+
+            var oil = new Material("Oil");
+            oil.Properties.Add("epsilon_r", 2.2);
+            problem.Materials.Add(oil);
+            var paper = new Material("Paper");
+            paper.Properties.Add("epsilon_r", 4.4);
+            problem.Materials.Add(paper);
+            var pressboard = new Material("Pressboard");
+            pressboard.Properties.Add("epsilon_r", 4.4);
+            problem.Materials.Add(pressboard);
 
             // Outer computational region (oil box)
-            int oil0 = AddRect(domain.RInner, domain.ZLower,
-                               domain.ROuter - domain.RInner,
-                               domain.ZUpper - domain.ZLower);
-
-            // --- Create components and track their tags
-            var windingTags = new Dictionary<string, int>();
-            foreach (var w in windings)
-            {
-                windingTags[w.Name] = TopFilletBlock(w);
-            }
-
-            var pbTags = new Dictionary<string, int>();
-            foreach (var pb in pressboards)
-            {
-                pbTags[pb.Name] = AddPressboardBarrier(pb);
-            }
-
-            var arTags = new Dictionary<string, int>();
-            foreach (var ar in angleRings)
-            {
-                arTags[ar.Name] = AddAngleRing(ar);
-            }
-
-            var staticMetalSeed = new Dictionary<string, int>();
-            var staticPaperSeed = new Dictionary<string, List<int>>();
-
-            foreach (var sr in staticRings)
-            {
-                var (metalTag, paperTags) = AddStaticRing(sr);
-                staticMetalSeed[sr.Name] = metalTag;
-                staticPaperSeed[sr.Name] = paperTags;
-            }
-
-            Gmsh.Model.Occ.Synchronize();
-
-            // --- Prepare for Fragment
-            var inputMap = new Dictionary<int, (string category, string name)>();
-
-            foreach (var (name, tag) in windingTags)
-            {
-                inputMap[tag] = ("winding", name);
-            }
-
-            foreach (var (name, tag) in pbTags)
-            {
-                inputMap[tag] = ("pressboard", name);
-            }
-
-            foreach (var (name, tag) in arTags)
-            {
-                inputMap[tag] = ("angle_ring", name);
-            }
-
-            foreach (var sr in staticRings)
-            {
-                int metalTag = staticMetalSeed[sr.Name];
-                inputMap[metalTag] = ("static_metal", sr.Name);
-                foreach (int t in staticPaperSeed[sr.Name])
-                {
-                    inputMap[t] = ("static_paper", sr.Name);
-                }
-            }
-
-            // Build tools list
-            var tools = inputMap.Keys.Select(tag => (2, tag)).ToArray();
-
-            // --- Fragment
-            Gmsh.Model.Occ.Fragment(
-                new[] { (2, oil0) },
-                tools,
-                out var outDimTags,
-                out var outDimTagsMap,
-                removeObject: true,
-                removeTool: true
-            );
-            Gmsh.Model.Occ.Synchronize();
-
-            // --- Process Fragment Results
-            var domainFragments = new HashSet<int>(
-                outDimTagsMap[0].Where(dt => dt.dim == 2).Select(dt => dt.tag)
-            );
-
-            var electrodeSurfs = windings.ToDictionary(w => w.Name, _ => new List<int>());
-            var pressboardSurfs = pressboards.ToDictionary(pb => pb.Name, _ => new List<int>());
-            var angleRingSurfs = angleRings.ToDictionary(ar => ar.Name, _ => new List<int>());
-            var staticMetalSurfs = staticRings.ToDictionary(sr => sr.Name, _ => new List<int>());
-            var staticPaperSurfs = staticRings.ToDictionary(sr => sr.Name, _ => new List<int>());
-
-            var allComponentSurfs = new HashSet<int>();
-            var surfacesToRemove = new List<int>();
-
-            for (int i = 0; i < tools.Length; i++)
-            {
-                int inputTag = tools[i].Item2;
-                var fragments = outDimTagsMap[i + 1].Where(dt => dt.dim == 2).Select(dt => dt.tag).ToList();
-
-                var inside = fragments.Where(t => domainFragments.Contains(t)).ToList();
-                var outside = fragments.Where(t => !domainFragments.Contains(t)).ToList();
-
-                if (outside.Count > 0)
-                {
-                    surfacesToRemove.AddRange(outside);
-                }
-
-                if (inside.Count == 0) continue;
-
-                var (category, name) = inputMap[inputTag];
-
-                switch (category)
-                {
-                    case "winding":
-                        electrodeSurfs[name].AddRange(inside);
-                        break;
-                    case "pressboard":
-                        pressboardSurfs[name].AddRange(inside);
-                        break;
-                    case "angle_ring":
-                        angleRingSurfs[name].AddRange(inside);
-                        break;
-                    case "static_metal":
-                        staticMetalSurfs[name].AddRange(inside);
-                        break;
-                    case "static_paper":
-                        staticPaperSurfs[name].AddRange(inside);
-                        break;
-                }
-
-                allComponentSurfs.UnionWith(inside);
-            }
-
-            // Remove outside surfaces
-            if (surfacesToRemove.Count > 0)
-            {
-                Gmsh.Model.Occ.Remove(surfacesToRemove.Select(t => (2, t)).ToArray(), recursive: true);
-                Gmsh.Model.Occ.Synchronize();
-            }
-
-            // --- Identify Oil Surfaces
-            var oilSurfs = domainFragments.Where(t => !allComponentSurfs.Contains(t)).ToList();
-
-            // --- Collect all surfaces
-            Gmsh.Model.Occ.GetEntities(out var allEntities, 2);
-            var allSurfs = allEntities.Select(e => e.tag).ToList();
-
-            // Unions
-            var electrodeUnion = new HashSet<int>(electrodeSurfs.Values.SelectMany(x => x));
-            var pressboardUnion = new HashSet<int>(pressboardSurfs.Values.SelectMany(x => x));
-            var angleRingUnion = new HashSet<int>(angleRingSurfs.Values.SelectMany(x => x));
-            var staticMetalUnion = new HashSet<int>(staticMetalSurfs.Values.SelectMany(x => x));
-            var staticPaperUnion = new HashSet<int>(staticPaperSurfs.Values.SelectMany(x => x));
-
-            // ---- 2D materials ----
-            AddPhys(2, oilSurfs, "OIL", tag: 1);
-
-            var pbTotal = pressboardUnion.Union(angleRingUnion).ToList();
-            if (pbTotal.Count > 0)
-            {
-                AddPhys(2, pbTotal.OrderBy(x => x).ToList(), "PRESSBOARD", tag: 2);
-            }
-
-            if (staticPaperUnion.Count > 0)
-            {
-                AddPhys(2, staticPaperUnion.OrderBy(x => x).ToList(), "PAPER", tag: 3);
-            }
-
-            // ---- electrodes (surfaces only for bookkeeping) ----
-            var electrodeTagMap = new Dictionary<string, int>
-            {
-                { "HV", 101 }, { "LV", 102 }, { "RV", 103 },
-                { "HV_2", 104 }, { "LV_2", 105 }, { "RV_2", 106 }
-            };
-
-            foreach (var w in windings)
-            {
-                AddPhys(2, electrodeSurfs[w.Name], $"ELECTRODE_{w.Name}", tag: electrodeTagMap[w.Name]);
-            }
-
-            for (int i = 0; i < staticRings.Count; i++)
-            {
-                var sr = staticRings[i];
-                AddPhys(2, staticMetalSurfs[sr.Name], $"ELECTRODE_{sr.Name}", tag: 120 + i);
-            }
-
+            double domain_h = domain.ZUpper - domain.ZLower;
+            double domain_w = domain.ROuter - domain.RInner;
+            GeomPoint lower_left = geometry.AddPoint(domain.RInner, domain.ZLower);
+            GeomPoint upper_left = geometry.AddPoint(domain.RInner, domain.ZUpper);
+            GeomPoint upper_right = geometry.AddPoint(domain.ROuter, domain.ZUpper);
+            GeomPoint lower_right = geometry.AddPoint(domain.ROuter, domain.ZLower);
+            GeomLine left_bdry = geometry.AddLine(lower_left, upper_left);
+            GeomLine top_bdry = geometry.AddLine(upper_left, upper_right);
+            GeomLine right_bdry = geometry.AddLine(upper_right, lower_right);
+            GeomLine bottom_bdry = geometry.AddLine(lower_right, lower_left);
+            GeomLineLoop oil_bdry = geometry.AddLineLoop([left_bdry, top_bdry, right_bdry, bottom_bdry]);
+            var oil_surf = geometry.AddSurface(oil_bdry);
+            int oil_tag = tags.TagEntityByString(oil_surf, "Oil");
+            var region = new Region("Oil", [oil_tag], oil);
+            problem.Regions.Add(region);
+            tags.TagEntityByString(left_bdry, "Core");
+            tags.TagEntityByString(top_bdry, "TopYoke");
+            tags.TagEntityByString(right_bdry, "Tank");
+            tags.TagEntityByString(bottom_bdry, "Lower_Bdry");
             // Curves we want to refine around
             var refineCurves = new List<int>();
 
-            // --- Physical groups (1D boundaries for Dirichlet BC)
-            var bcIds = new Dictionary<string, int>
-            {
-                { "HV", 11 }, { "LV", 12 }, { "RV", 13 },
-                { "HV_2", 14 }, { "LV_2", 15 }, { "RV_2", 16 }
-            };
+            // Track components for clipping
+            var componentSurfaces = new List<(GeomSurface surf, string name, string type)>();
+            var electrodes = new List<(GeomSurface surf, string name, string type)>();
 
+            electrodes.Add((oil_surf, "Tank", "domain_bdry"));
+
+            // --- Phase 1: Build FULL geometry (unrestricted by domain) ---
             foreach (var w in windings)
             {
-                var curves = BoundaryCurvesOfSurfaces(electrodeSurfs[w.Name]);
-                AddPhys(1, curves, $"BC_{w.Name}", tag: bcIds[w.Name]);
-                refineCurves.AddRange(curves);
+                var wdg_block_surf = TopFilletBlock(w);
+                //tags.TagEntityByString(wdg_block_surf, w.Name);
+                componentSurfaces.Add((wdg_block_surf, w.Name, "winding"));
+                tags.TagEntityByString(wdg_block_surf.Boundary, w.Name + "Bdry");
+                electrodes.Add((wdg_block_surf, w.Name, "winding"));
             }
 
-            for (int i = 0; i < staticRings.Count; i++)
+            foreach (var pb in pressboards)
             {
-                var sr = staticRings[i];
-                var curves = BoundaryCurvesOfSurfaces(staticMetalSurfs[sr.Name]);
-                AddPhys(1, curves, $"BC_{sr.Name}", tag: 21 + i);
-                refineCurves.AddRange(curves);
+                var pb_surf = AddPressboardBarrier(pb);
+                int pb_tag = tags.TagEntityByString(pb_surf, pb.Name);
+                componentSurfaces.Add((pb_surf, pb.Name, "pressboard"));
+                var pb_region = new Region(pb.Name, [pb_tag], pressboard);
+                problem.Regions.Add(pb_region);
             }
 
-            // Optional: pressboard boundary curves
-            if (pbTotal.Count > 0)
+            foreach (var ar in angleRings)
             {
-                var pbCurves = BoundaryCurvesOfSurfaces(pbTotal.OrderBy(x => x));
-                AddPhys(1, pbCurves, "BC_PRESSBOARD", tag: 30);
-                refineCurves.AddRange(pbCurves);
+                var ar_surf = AddAngleRing(ar);
+                int ar_tag = tags.TagEntityByString(ar_surf, ar.Name);
+                componentSurfaces.Add((ar_surf, ar.Name, "anglering"));
+                var ar_region = new Region(ar.Name, [ar_tag], pressboard);
+                problem.Regions.Add(ar_region);
+            }
+
+            foreach (var sr in staticRings)
+            {
+                var (metal_surf, paper_surf) = AddStaticRing(sr);
+                //componentSurfaces.Add((metal_surf, sr.Name + "_Metal", "static_metal"));
+                //tags.TagEntityByString(metal_surf, sr.Name + "_Metal");
+                tags.TagEntityByString(metal_surf.Boundary, sr.Name + "_Metal_Bdry");
+                electrodes.Add((metal_surf, sr.Name + "_Metal", "static_metal"));
+                int paper_tag = tags.TagEntityByString(paper_surf, sr.Name + "_Paper");
+                componentSurfaces.Add((paper_surf, sr.Name + "_Paper", "static_paper"));
+                var paper_region = new Region(sr.Name+"_Paper", [paper_tag], paper);
+                problem.Regions.Add(paper_region);
+            }
+
+            // --- Phase 2: Clip components to domain (if enabled) ---
+            int clippedCount = 0;
+            int skippedCount = 0;
+
+            // Track surfaces that should be removed from the geometry (fully outside / degenerate).
+            var surfacesToRemove = new List<GeomSurface>();
+
+            foreach (var (surf, name, type) in componentSurfaces)
+            {
+                var bounds = surf.Boundary.GetBoundingBox();
+
+                // Guard against degenerate/invalid geometry
+                if (double.IsNaN(bounds.minX) || double.IsNaN(bounds.maxX) ||
+                    double.IsNaN(bounds.minY) || double.IsNaN(bounds.MaxY) ||
+                    double.IsInfinity(bounds.minX) || double.IsInfinity(bounds.maxX) ||
+                    double.IsInfinity(bounds.minY) || double.IsInfinity(bounds.MaxY))
+                {
+                    Console.WriteLine($"Warning: {name} ({type}) has invalid bounds (NaN/Infinity), skipping");
+                    surfacesToRemove.Add(surf);
+                    skippedCount++;
+                    continue;
+                }
+
+                // Check if component intersects domain - note: MaxY with capital M
+                if (!domain.Intersects(bounds.minX, bounds.minY, bounds.maxX, bounds.MaxY))
+                {
+                    Console.WriteLine($"Info: {name} ({type}) is entirely outside domain, removing");
+                    surfacesToRemove.Add(surf);
+                    skippedCount++;
+                    continue;
+                }
+
+                GeomLineLoop boundaryToAdd;
+
+                if (clipToDomain)
+                {
+                    // Check if entirely within domain (fast path - no clipping needed)
+                    if (domain.FullyContains(bounds.minX, bounds.minY, bounds.maxX, bounds.MaxY))
+                    {
+                        boundaryToAdd = surf.Boundary;
+                    }
+                    else
+                    {
+                        // Partially outside - clip it
+                        Console.WriteLine($"Info: Clipping {name} ({type}) to domain bounds");
+                        var clippedBoundary = GeometryClipping.ClipLineLoop(surf.Boundary, domain, geometry);
+
+                        if (clippedBoundary == null)
+                        {
+                            Console.WriteLine($"Warning: {name} ({type}) became degenerate after clipping, removing");
+                            surfacesToRemove.Add(surf);
+                            skippedCount++;
+                            continue;
+                        }
+
+                        // Replace the component surface's boundary with the clipped loop so
+                        // the surface itself is the clipped region (and not the original full extent).
+                        surf.Boundary = clippedBoundary;
+                        boundaryToAdd = clippedBoundary;
+                        clippedCount++;
+                    }
+                }
+                else
+                {
+                    // No clipping - use original boundary
+                    boundaryToAdd = surf.Boundary;
+                }
+
+                // Add to oil surface holes.
+                // NOTE: For a static ring the metal sits inside the paper; the paper boundary
+                // is what touches the oil region. The metal boundary is still referenced as a
+                // hole in the paper surface, and is still used for the Dirichlet boundary condition
+                // below.
+                if (type != "static_metal")
+                {
+                    oil_surf.Holes.Add(boundaryToAdd);
+                    refineCurves.Add(boundaryToAdd.Tag);
+                }
+                else
+                {
+                    refineCurves.Add(boundaryToAdd.Tag);
+                }
+
+                // Add material regions for non-electrodes
+                if (type == "pressboard" || type == "anglering")
+                {
+                    // Note: This creates a region but the surface may need reconstruction
+                    // For now, just track the boundary
+                }
+            }
+
+            // Remove surfaces that are outside the domain or became degenerate.
+            foreach (var s in surfacesToRemove)
+            {
+                geometry.Surfaces.Remove(s);
+            }
+
+            // Capture each electrode's intended Dirichlet tag BEFORE splitting/pruning,
+            // then clear the loop-level tag so the GMSH writer does not emit the whole
+            // clipped loop as a single physical curve (which would include any segment
+            // lying on a truncated domain edge).
+            var electrodeLoopTags = new List<(GeomLineLoop loop, int tag)>();
+            foreach (var (surf, _, _) in electrodes)
+            {
+                if (surf?.Boundary == null) continue;
+                int loopTag = surf.Boundary.Tag;
+                if (loopTag <= 0) continue;
+                electrodeLoopTags.Add((surf.Boundary, loopTag));
+                surf.Boundary.Tag = 0;
+            }
+
+            // Split any line that has another point lying on its interior so that adjacent
+            // components which share an edge end up referencing the same sub-line, yielding
+            // a conforming boundary for gmsh.
+            SplitLinesAtIncidentPoints(geometry);
+
+            // Prune any line loops / lines / arcs that are no longer referenced by any surface.
+            // This is what was leaking outside-domain geometry.
+            PruneUnreferencedEntities(geometry);
+
+            // Re-apply each electrode's Dirichlet tag to its surviving boundary sub-segments,
+            // skipping any segment that lies on a truncated-domain edge. Those truncation
+            // segments are NOT real conductor surfaces; tagging them would conflict with
+            // the domain-edge BC at shared DOFs (the MFEM "Conflicting Boundary Conditions"
+            // error you would otherwise see). We do this AFTER SplitLinesAtIncidentPoints so
+            // we tag the actual sub-line instances that end up in the gmsh output.
+            foreach (var (loop, tag) in electrodeLoopTags)
+            {
+                foreach (var ent in loop.Boundary)
+                {
+                    if (IsOnDomainEdge(ent, domain)) continue;
+                    if (ent is GeomLine gl)
+                    {
+                        // Don't overwrite a non-electrode tag if one was somehow set.
+                        if (gl.Tag == 0) gl.Tag = tag;
+                    }
+                    else if (ent is GeomArc ga)
+                    {
+                        if (ga.Tag == 0) ga.Tag = tag;
+                    }
+                }
+            }
+
+            if (clipToDomain)
+            {
+                Console.WriteLine($"Domain clipping summary: {clippedCount} components clipped, {skippedCount} components removed");
+            }
+
+            double? potential;
+            foreach (var (surf, name, type) in electrodes)
+            {
+                potential = voltages[name];
+                // Add boundary conditions for electrodes.
+                // Use the tag we captured before clearing surf.Boundary.Tag above; that is
+                // also the per-segment tag now applied to the conductor's surviving sub-edges,
+                // which GmshFile aggregates into a single Physical Curve.
+                if (potential.HasValue)
+                {
+                    int bcTag = electrodeLoopTags
+                        .Where(t => ReferenceEquals(t.loop, surf.Boundary))
+                        .Select(t => t.tag)
+                        .DefaultIfEmpty(surf.Boundary.Tag)
+                        .First();
+                    if (bcTag <= 0) continue;
+                    var bc = new DirichletBoundaryCondition
+                    {
+                        Name = name,
+                        Tags = new List<int> { bcTag },
+                        Potential = potential.Value
+                    };
+                    problem.BoundaryConditions.Add(bc);
+                }
             }
 
             refineCurves = Uniq(refineCurves);
 
-            // Outer boundary ("tank")
-            Gmsh.Model.Occ.GetEntities(out var allCurveEntities, 1);
-            var allCurves = allCurveEntities.Select(e => e.tag).ToList();
-            var tankCurves = new List<int>();
-            var bottomCurves = new List<int>();
+            //// --- Local refinement near selected curves
+            //if (refineCurves.Count > 0)
+            //{
+            //    int fDist = Gmsh.Model.Mesh.Field.Add("Distance");
+            //    Gmsh.Model.Mesh.Field.SetNumbers(fDist, "CurvesList", refineCurves.Select(c => (double)c).ToArray());
+            //    Gmsh.Model.Mesh.Field.SetNumber(fDist, "Sampling", 100);
 
-            foreach (int c in allCurves)
-            {
-                var (cx, cy) = CurveCom(c);
+            //    int fTh = Gmsh.Model.Mesh.Field.Add("Threshold");
+            //    Gmsh.Model.Mesh.Field.SetNumber(fTh, "InField", fDist);
+            //    Gmsh.Model.Mesh.Field.SetNumber(fTh, "SizeMin", Math.Max(0.2, 0.15 * lc));
+            //    Gmsh.Model.Mesh.Field.SetNumber(fTh, "SizeMax", lc);
+            //    Gmsh.Model.Mesh.Field.SetNumber(fTh, "DistMin", 0.5 * lc);
+            //    Gmsh.Model.Mesh.Field.SetNumber(fTh, "DistMax", 6.0 * lc);
 
-                if (Math.Abs(cy - domain.ZLower) < 1e-3)
-                {
-                    bottomCurves.Add(c);
-                }
-                else if (Math.Abs(cx - domain.RInner) < 1e-3 ||
-                         Math.Abs(cx - domain.ROuter) < 1e-3 ||
-                         Math.Abs(cy - domain.ZUpper) < 1e-3)
-                {
-                    tankCurves.Add(c);
-                }
-            }
+            //    Gmsh.Model.Mesh.Field.SetAsBackgroundMesh(fTh);
+            //}
 
-            AddPhys(1, Uniq(tankCurves), "BC_TANK", tag: 17);
-            AddPhys(1, Uniq(bottomCurves), "BC_BOTTOM", tag: 18);
+            //// --- Mesh
+            //Gmsh.Option.SetNumber("Mesh.CharacteristicLengthMax", lc);
+            //Gmsh.Option.SetNumber("Mesh.CharacteristicLengthMin", 0.1);
+            //Gmsh.Option.SetNumber("Mesh.SaveAll", 1);
+            //Gmsh.Option.SetNumber("Mesh.ElementOrder", 2);
+            //Gmsh.Option.SetNumber("Mesh.MeshSizeFromPoints", 0);
+            //Gmsh.Option.SetNumber("Mesh.MeshSizeFromCurvature", 0);
+            //Gmsh.Option.SetNumber("Mesh.MeshSizeExtendFromBoundary", 0);
 
-            // --- Local refinement near selected curves
-            if (refineCurves.Count > 0)
-            {
-                int fDist = Gmsh.Model.Mesh.Field.Add("Distance");
-                Gmsh.Model.Mesh.Field.SetNumbers(fDist, "CurvesList", refineCurves.Select(c => (double)c).ToArray());
-                Gmsh.Model.Mesh.Field.SetNumber(fDist, "Sampling", 100);
-
-                int fTh = Gmsh.Model.Mesh.Field.Add("Threshold");
-                Gmsh.Model.Mesh.Field.SetNumber(fTh, "InField", fDist);
-                Gmsh.Model.Mesh.Field.SetNumber(fTh, "SizeMin", Math.Max(0.2, 0.15 * lc));
-                Gmsh.Model.Mesh.Field.SetNumber(fTh, "SizeMax", lc);
-                Gmsh.Model.Mesh.Field.SetNumber(fTh, "DistMin", 0.5 * lc);
-                Gmsh.Model.Mesh.Field.SetNumber(fTh, "DistMax", 6.0 * lc);
-
-                Gmsh.Model.Mesh.Field.SetAsBackgroundMesh(fTh);
-            }
-
-            // --- Mesh
-            Gmsh.Option.SetNumber("Mesh.CharacteristicLengthMax", lc);
-            Gmsh.Option.SetNumber("Mesh.CharacteristicLengthMin", 0.1);
-            Gmsh.Option.SetNumber("Mesh.SaveAll", 1);
-            Gmsh.Option.SetNumber("Mesh.ElementOrder", 2);
-            Gmsh.Option.SetNumber("Mesh.MeshSizeFromPoints", 0);
-            Gmsh.Option.SetNumber("Mesh.MeshSizeFromCurvature", 0);
-            Gmsh.Option.SetNumber("Mesh.MeshSizeExtendFromBoundary", 0);
-
-            Gmsh.Model.Mesh.Generate(2);
+            // TODO: Use GeomLib mesh generation
 
             // Ensure output directory exists
-            string meshDir = Path.GetDirectoryName(mshOut);
-            if (string.IsNullOrEmpty(meshDir)) meshDir = ".";
-            Directory.CreateDirectory(meshDir);
-
-            Gmsh.Write(mshOut);
-
-            // Export geometry to BREP format
-            string brepOut = mshOut.Replace(".msh", ".brep");
-            if (brepOut == mshOut) brepOut += ".brep";
-            Gmsh.Write(brepOut);
-
-            if (verbose)
+            if (generateMesh && !string.IsNullOrEmpty(mshOut))
             {
-                Console.WriteLine($"Wrote: {mshOut}");
-                Console.WriteLine($"Wrote: {brepOut}");
-                Console.WriteLine($"  oil surfaces: {oilSurfs.Count}");
-                Console.WriteLine($"  pressboard surfaces: {pbTotal.Count}");
-                Console.WriteLine($"  paper surfaces: {staticPaperUnion.Count}");
-                foreach (var w in windings)
-                {
-                    Console.WriteLine($"  {w.Name} electrode surfaces: {electrodeSurfs[w.Name].Count}");
-                }
-                foreach (var sr in staticRings)
-                {
-                    Console.WriteLine($"  {sr.Name} electrode surfaces: {staticMetalSurfs[sr.Name].Count}");
-                }
-            }
+                string meshDir = Path.GetDirectoryName(mshOut);
+                if (string.IsNullOrEmpty(meshDir)) meshDir = ".";
+                Directory.CreateDirectory(meshDir);
 
-            Gmsh.Finalize();
+                // --- Phase 3: Mesh the geometry ---
+                gmsh.AddGeometry(geometry);
+                gmsh.GenerateMesh(mshOut, lc);
+
+                problem.MeshFile = mshOut;
+            }
+            // Export geometry to BREP format
+            //string brepOut = mshOut.Replace(".msh", ".brep");
+            //if (brepOut == mshOut) brepOut += ".brep";
+            //Gmsh.Write(brepOut);
         }
+
     }
 
 }
