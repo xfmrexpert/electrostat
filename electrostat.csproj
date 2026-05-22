@@ -7,4 +7,15 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\..\GeomLibrary\GeometryLib\GeometryLib.csproj" />
+    <ProjectReference Include="..\..\TfmrLibrary\src\TfmrLib\TfmrLib.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="electrostat_UI\**" />
+    <None Remove="electrostat_UI\**" />
+    <EmbeddedResource Remove="electrostat_UI\**" />
+  </ItemGroup>
+
 </Project>

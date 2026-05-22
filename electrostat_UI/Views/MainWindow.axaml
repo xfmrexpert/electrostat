@@ -1,0 +1,45 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:electrostat_UI.ViewModels"
+        xmlns:views="using:electrostat_UI.Views"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="700"
+        x:Class="electrostat_UI.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Icon="/Assets/avalonia-logo.ico"
+        Title="electrostat_UI">
+
+    <Design.DataContext>
+        <vm:MainWindowViewModel/>
+    </Design.DataContext>
+
+    <Grid RowDefinitions="Auto,*,Auto" ColumnDefinitions="260,*">
+        <TextBlock Grid.Row="0" Grid.ColumnSpan="2"
+                   Text="Electrostat – Geometry Preview"
+                   FontSize="18" FontWeight="SemiBold"
+                   Margin="12,8"/>
+
+        <StackPanel Grid.Row="1" Grid.Column="0" Margin="8" Spacing="6">
+            <TextBlock Text="Examples" FontWeight="SemiBold"/>
+            <ListBox ItemsSource="{Binding Examples}"
+                     SelectedItem="{Binding SelectedExample, Mode=TwoWay}">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding Name}"/>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </StackPanel>
+
+        <Border Grid.Row="1" Grid.Column="1" Margin="8"
+                BorderBrush="Gray" BorderThickness="1">
+            <views:GeometryView Geometry="{Binding CurrentGeometry}"/>
+        </Border>
+
+        <TextBlock Grid.Row="2" Grid.ColumnSpan="2"
+                   Margin="12,4"
+                   Text="{Binding StatusMessage}"/>
+    </Grid>
+
+</Window>
