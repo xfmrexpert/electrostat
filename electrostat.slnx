@@ -1,5 +1,6 @@
 <Solution>
   <Project Path="../../GeomLibrary/GeometryLib/GeometryLib.csproj" />
+  <Project Path="../../GeomLibrary/MeshLib/MeshLib.csproj" />
   <Project Path="../../TfmrLibrary/src/TfmrLib/TfmrLib.csproj" />
   <Project Path="electrostat.csproj" />
   <Project Path="electrostat_UI/electrostat_UI.csproj" Id="574f30a7-4aa8-4c0c-ba20-9745a1554091" />
