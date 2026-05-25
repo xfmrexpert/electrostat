@@ -554,6 +554,188 @@ namespace electrostat
             }
         }
 
+        /// <summary>
+        /// After clipping, an electrode that has been partially truncated may end up with its
+        /// hole loop sharing one or more edges with the enclosing surface's outer boundary
+        /// (typical case: a winding clipped to the bottom of the domain shares its bottom edge
+        /// with <c>bottom_bdry</c>). In that situation the loop is no longer a true hole —
+        /// the "interior" region is connected to the exterior through the shared edge —
+        /// and gmsh cannot tessellate around it: it inserts boundary nodes along the shared
+        /// edge but generates no incident triangles, producing orphan nodes that MFEM reports
+        /// as <c>be_to_face[..] == -1</c>.
+        ///
+        /// This method drops any hole loop from each surface that shares at least one edge
+        /// instance (line or arc, by reference) with that surface's outer boundary.
+        ///
+        /// Important: a hole loop must NOT be dropped if it is still the outer boundary of
+        /// another surviving surface (e.g. a pressboard / angle-ring / static-ring-paper
+        /// region whose interior is meshed with its own material attribute). Dropping such
+        /// a hole would leave both the enclosing surface (oil) and the component surface
+        /// tessellating the same region — gmsh emits overlapping triangles and MFEM's
+        /// Mesh::Finalize aborts with "Boundary elements with wrong orientation … Interior
+        /// face with incompatible orientations". The hole must only be removed when the
+        /// component surface itself has already been dropped from <c>geom.Surfaces</c>
+        /// (this is the case for electrode interiors — windings, static-ring metals — which
+        /// participate only as Dirichlet boundaries and whose surface was removed earlier).
+        /// </summary>
+        private static void DropMergedHoleLoops(Geometry geom)
+        {
+            static IEnumerable<GeomPoint> Endpoints(GeomEntity e) => e switch
+            {
+                GeomLine l => new[] { l.pt1, l.pt2 },
+                GeomArc a => new[] { a.StartPt, a.EndPt },
+                _ => Array.Empty<GeomPoint>(),
+            };
+
+            static bool ShareEndpoint(GeomEntity a, GeomEntity b)
+            {
+                foreach (var pa in Endpoints(a))
+                    foreach (var pb in Endpoints(b))
+                        if (ReferenceEquals(pa, pb)) return true;
+                return false;
+            }
+
+            // Any loop that is currently the outer boundary of some surface must be kept as
+            // a hole on its enclosing surface, otherwise the two surfaces will overlap.
+            var loopsUsedAsOuter = new HashSet<GeomLineLoop>(ReferenceEqualityComparer.Instance);
+            foreach (var s in geom.Surfaces)
+            {
+                if (s.Boundary != null) loopsUsedAsOuter.Add(s.Boundary);
+            }
+
+            foreach (var surface in geom.Surfaces)
+            {
+                if (surface.Boundary == null || surface.Holes.Count == 0) continue;
+
+                var holesToRemove = new List<GeomLineLoop>();
+
+                foreach (var hole in surface.Holes)
+                {
+                    if (hole == null) continue;
+                    if (loopsUsedAsOuter.Contains(hole)) continue; // material region — keep hole
+
+                    // Rebuild on every iteration: a previous splice will have changed surface.Boundary.Boundary.
+                    var outerEdges = new HashSet<GeomEntity>(
+                        surface.Boundary.Boundary, ReferenceEqualityComparer.Instance);
+
+                    int n = hole.Boundary.Count;
+                    if (n == 0) { holesToRemove.Add(hole); continue; }
+
+                    var shared = new bool[n];
+                    int sharedCount = 0;
+                    for (int i = 0; i < n; i++)
+                    {
+                        if (outerEdges.Contains(hole.Boundary[i]))
+                        {
+                            shared[i] = true;
+                            sharedCount++;
+                        }
+                    }
+
+                    if (sharedCount == 0) continue;            // genuine hole — keep
+                    if (sharedCount == n)                      // whole loop coincides with outer; nothing to preserve
+                    {
+                        holesToRemove.Add(hole);
+                        continue;
+                    }
+
+                    // Splice is only well-defined when the shared edges form a single
+                    // contiguous run around the cyclic hole boundary.
+                    int holeTransitions = 0;
+                    for (int i = 0; i < n; i++)
+                        if (shared[i] && !shared[(i + 1) % n]) holeTransitions++;
+                    if (holeTransitions != 1)
+                    {
+                        Console.WriteLine("Warning: merged hole loop has non-contiguous shared edges; dropping (conductor edges may be lost).");
+                        holesToRemove.Add(hole);
+                        continue;
+                    }
+
+                    // Find the first index of the shared run (cyclically).
+                    int sharedStart = -1;
+                    for (int i = 0; i < n; i++)
+                    {
+                        if (shared[i] && !shared[(i + n - 1) % n]) { sharedStart = i; break; }
+                    }
+                    if (sharedStart < 0) { holesToRemove.Add(hole); continue; }
+
+                    // Collect the non-shared run in hole traversal order, starting right
+                    // after the shared run.
+                    var unsharedRun = new List<GeomEntity>(n - sharedCount);
+                    for (int k = sharedCount; k < n; k++)
+                        unsharedRun.Add(hole.Boundary[(sharedStart + k) % n]);
+
+                    // Locate the same shared run inside the outer boundary (by reference).
+                    var sharedSet = new HashSet<GeomEntity>(n - unsharedRun.Count, ReferenceEqualityComparer.Instance);
+                    for (int k = 0; k < sharedCount; k++)
+                        sharedSet.Add(hole.Boundary[(sharedStart + k) % n]);
+
+                    var outerList = surface.Boundary.Boundary;
+                    int m = outerList.Count;
+                    int outerSharedCount = 0;
+                    int outerStart = -1;
+                    int outerTransitions = 0;
+                    for (int i = 0; i < m; i++)
+                    {
+                        bool curShared = sharedSet.Contains(outerList[i]);
+                        if (curShared) outerSharedCount++;
+                        if (curShared && !sharedSet.Contains(outerList[(i - 1 + m) % m])) outerStart = i;
+                        if (curShared && !sharedSet.Contains(outerList[(i + 1) % m])) outerTransitions++;
+                    }
+                    if (outerStart < 0 || outerSharedCount != sharedCount || outerTransitions != 1)
+                    {
+                        Console.WriteLine("Warning: merged hole shared edges are non-contiguous in outer boundary; dropping (conductor edges may be lost).");
+                        holesToRemove.Add(hole);
+                        continue;
+                    }
+
+                    // Rotate outer so the shared run sits at positions [0, outerSharedCount),
+                    // then drop it. The element now at the END of `rotated` is the edge that
+                    // immediately precedes the spliced section in cyclic order; the element at
+                    // index 0 is the edge that immediately follows it.
+                    var rotated = new List<GeomEntity>(m);
+                    for (int i = 0; i < m; i++) rotated.Add(outerList[(outerStart + i) % m]);
+                    rotated.RemoveRange(0, outerSharedCount);
+
+                    // Decide insertion direction by endpoint adjacency. The hole and outer
+                    // traverse the shared edges in opposite senses, but the geom library does
+                    // not record per-edge direction explicitly — adjacency in the loop list is
+                    // the only invariant we can rely on.
+                    IEnumerable<GeomEntity> toInsert = unsharedRun;
+                    if (rotated.Count > 0)
+                    {
+                        var prevEdge = rotated[rotated.Count - 1]; // edge immediately before spliced section
+                        if (!ShareEndpoint(prevEdge, unsharedRun[0]))
+                        {
+                            if (ShareEndpoint(prevEdge, unsharedRun[unsharedRun.Count - 1]))
+                            {
+                                toInsert = Enumerable.Reverse(unsharedRun);
+                            }
+                            else
+                            {
+                                Console.WriteLine("Warning: cannot determine splice direction for merged hole; dropping.");
+                                holesToRemove.Add(hole);
+                                continue;
+                            }
+                        }
+                    }
+
+                    rotated.InsertRange(0, toInsert);
+
+                    outerList.Clear();
+                    outerList.AddRange(rotated);
+
+                    holesToRemove.Add(hole);
+                }
+
+                if (holesToRemove.Count > 0)
+                {
+                    var removeSet = new HashSet<GeomLineLoop>(holesToRemove, ReferenceEqualityComparer.Instance);
+                    surface.Holes.RemoveAll(h => removeSet.Contains(h));
+                }
+            }
+        }
+
         // ----------------------------
         // GetDP Analysis
         // ----------------------------
@@ -796,6 +978,30 @@ namespace electrostat
                 geometry.Surfaces.Remove(s);
             }
 
+            // Drop electrode interiors (windings, static-ring metals) from the surface list.
+            // These conductors participate only as Dirichlet boundaries on the oil / paper
+            // regions: their loops are already added as holes above. If we leave them in
+            // `geometry.Surfaces`, the writer emits a standalone `Plane Surface` for each,
+            // which gmsh meshes — but msh2 only writes 2D elements for surfaces with a
+            // `Physical Surface` tag (electrodes have none). The interior triangles are
+            // dropped, while the boundary nodes that gmsh created on the electrode's edges
+            // remain in `$Nodes`. The oil-side mesh reuses those parametric edges and so
+            // shares the boundary edge nodes — but along the bottom-of-domain truncation
+            // segment, the oil side does NOT touch the electrode (it sees the line only as
+            // part of its outer Lower_Bdry edge), so those nodes become orphans: present
+            // in `$Nodes` and referenced by `Physical Curve (5)` boundary line elements,
+            // but not adjacent to any 2D element. MFEM's CheckBdrElementOrientation then
+            // dereferences `be_to_face[..] == -1`, aborting in debug and silently
+            // corrupting BC assignment in release. Removing the surface stops gmsh from
+            // discretising the electrode interior at all, so no orphan nodes are created.
+            var electrodeSurfacesToDrop = new HashSet<GeomSurface>(ReferenceEqualityComparer.Instance);
+            foreach (var (surf, _, etype) in electrodes)
+            {
+                if (etype == "winding" || etype == "static_metal")
+                    electrodeSurfacesToDrop.Add(surf);
+            }
+            geometry.Surfaces.RemoveAll(s => electrodeSurfacesToDrop.Contains(s));
+
             // Capture each electrode's intended Dirichlet tag BEFORE splitting/pruning,
             // then clear the loop-level tag so the GMSH writer does not emit the whole
             // clipped loop as a single physical curve (which would include any segment
@@ -814,6 +1020,14 @@ namespace electrostat
             // components which share an edge end up referencing the same sub-line, yielding
             // a conforming boundary for gmsh.
             SplitLinesAtIncidentPoints(geometry);
+
+            // After splitting, an electrode hole loop may now share one or more edge instances
+            // with the oil (or paper) outer boundary — e.g. a winding clipped to the bottom of
+            // the domain shares its bottom edge with bottom_bdry. Such a "hole" is no longer
+            // interior to the enclosing surface and would cause gmsh to insert orphan nodes
+            // along the shared edge. Drop those hole loops here so the remaining surface has
+            // a topologically consistent boundary.
+            DropMergedHoleLoops(geometry);
 
             // Prune any line loops / lines / arcs that are no longer referenced by any surface.
             // This is what was leaking outside-domain geometry.
