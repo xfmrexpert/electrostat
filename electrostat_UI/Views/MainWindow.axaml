@@ -30,11 +30,26 @@
                     </DataTemplate>
                 </ListBox.ItemTemplate>
             </ListBox>
+            <Button Content="Solve"
+                    Command="{Binding SolveCommand}"
+                    HorizontalAlignment="Stretch"/>
+            <ProgressBar IsIndeterminate="True"
+                         IsVisible="{Binding IsSolving}"
+                         Height="6"/>
         </StackPanel>
 
         <Border Grid.Row="1" Grid.Column="1" Margin="8"
                 BorderBrush="Gray" BorderThickness="1">
-            <views:GeometryView Geometry="{Binding CurrentGeometry}"/>
+            <TabControl>
+                <TabItem Header="Geometry">
+                    <views:GeometryView Geometry="{Binding CurrentGeometry}"/>
+                </TabItem>
+                <TabItem Header="Results">
+                    <views:ResultsView Solution="{Binding CurrentSolution}"
+                                       FieldName="V"
+                                       ShowMesh="True"/>
+                </TabItem>
+            </TabControl>
         </Border>
 
         <TextBlock Grid.Row="2" Grid.ColumnSpan="2"
