@@ -761,6 +761,28 @@ namespace electrostat
         }
 
         /// <summary>
+        /// Build the geometry, mesh it, run the MFEM solver, and return the populated
+        /// <see cref="FEMProblem"/> (including <see cref="FEMProblem.Solution"/>) for
+        /// visualization.
+        /// </summary>
+        public static FEMProblem? BuildAndSolve(
+            ElectrostatCase _case,
+            string caseName,
+            double lc = 5.0,
+            bool clipToDomain = true)
+        {
+            ResetGeometry();
+            BuildModel(
+                _case,
+                lc: lc,
+                mshOut: $"{caseName}/geom.msh",
+                clipToDomain: clipToDomain,
+                generateMesh: true);
+            RunGetDPAnalysis();
+            return problem;
+        }
+
+        /// <summary>
         /// Build the geometry without invoking gmsh / writing a mesh file.
         /// Returns the populated <see cref="Geometry"/> for visualization.
         /// </summary>
@@ -831,6 +853,10 @@ namespace electrostat
             tags.TagEntityByString(top_bdry, "TopYoke");
             tags.TagEntityByString(right_bdry, "Tank");
             tags.TagEntityByString(bottom_bdry, "Lower_Bdry");
+            // Loops whose surviving (post-clip, post-split) boundary segments should be
+            // refined. Captured here as loops rather than tags so we can resolve them to
+            // GeomLine/GeomArc instances after SplitLinesAtIncidentPoints() runs.
+            var refineLoops = new List<GeomLineLoop>();
             // Curves we want to refine around
             var refineCurves = new List<int>();
 
@@ -958,10 +984,12 @@ namespace electrostat
                 {
                     oil_surf.Holes.Add(boundaryToAdd);
                     refineCurves.Add(boundaryToAdd.Tag);
+                    refineLoops.Add(boundaryToAdd);
                 }
                 else
                 {
                     refineCurves.Add(boundaryToAdd.Tag);
+                    refineLoops.Add(boundaryToAdd);
                 }
 
                 // Add material regions for non-electrodes
@@ -1089,34 +1117,6 @@ namespace electrostat
 
             refineCurves = Uniq(refineCurves);
 
-            //// --- Local refinement near selected curves
-            //if (refineCurves.Count > 0)
-            //{
-            //    int fDist = Gmsh.Model.Mesh.Field.Add("Distance");
-            //    Gmsh.Model.Mesh.Field.SetNumbers(fDist, "CurvesList", refineCurves.Select(c => (double)c).ToArray());
-            //    Gmsh.Model.Mesh.Field.SetNumber(fDist, "Sampling", 100);
-
-            //    int fTh = Gmsh.Model.Mesh.Field.Add("Threshold");
-            //    Gmsh.Model.Mesh.Field.SetNumber(fTh, "InField", fDist);
-            //    Gmsh.Model.Mesh.Field.SetNumber(fTh, "SizeMin", Math.Max(0.2, 0.15 * lc));
-            //    Gmsh.Model.Mesh.Field.SetNumber(fTh, "SizeMax", lc);
-            //    Gmsh.Model.Mesh.Field.SetNumber(fTh, "DistMin", 0.5 * lc);
-            //    Gmsh.Model.Mesh.Field.SetNumber(fTh, "DistMax", 6.0 * lc);
-
-            //    Gmsh.Model.Mesh.Field.SetAsBackgroundMesh(fTh);
-            //}
-
-            //// --- Mesh
-            //Gmsh.Option.SetNumber("Mesh.CharacteristicLengthMax", lc);
-            //Gmsh.Option.SetNumber("Mesh.CharacteristicLengthMin", 0.1);
-            //Gmsh.Option.SetNumber("Mesh.SaveAll", 1);
-            //Gmsh.Option.SetNumber("Mesh.ElementOrder", 2);
-            //Gmsh.Option.SetNumber("Mesh.MeshSizeFromPoints", 0);
-            //Gmsh.Option.SetNumber("Mesh.MeshSizeFromCurvature", 0);
-            //Gmsh.Option.SetNumber("Mesh.MeshSizeExtendFromBoundary", 0);
-
-            // TODO: Use GeomLib mesh generation
-
             // Ensure output directory exists
             if (generateMesh && !string.IsNullOrEmpty(mshOut))
             {
@@ -1126,6 +1126,62 @@ namespace electrostat
 
                 // --- Phase 3: Mesh the geometry ---
                 gmsh.AddGeometry(geometry);
+
+                // Local refinement around every electrode / pressboard / angle-ring
+                // boundary that survived clipping. We feed the actual sub-segments
+                // (post-SplitLinesAtIncidentPoints) so the Distance field samples the
+                // real curves gmsh will mesh, not their pre-clip parents. Sizes are
+                // expressed relative to `lc` so this scales with the caller's request.
+                var refineEntities = new List<object>();
+                foreach (var loop in refineLoops)
+                {
+                    if (loop?.Boundary == null) continue;
+                    foreach (var ent in loop.Boundary)
+                    {
+                        // Skip segments that ended up on a truncated domain edge —
+                        // they aren't really conductor boundaries.
+                        if (IsOnDomainEdge(ent, domain)) continue;
+                        refineEntities.Add(ent);
+                    }
+                }
+                if (refineEntities.Count > 0)
+                {
+                    gmsh.AddDistanceRefinement(
+                        curves: refineEntities,
+                        sizeMin: Math.Max(0.2, 0.15 * lc),
+                        sizeMax: lc,
+                        distMin: 0.5 * lc,
+                        distMax: 6.0 * lc,
+                        sampling: 100);
+                }
+
+                // Pin the outer domain boundary (core / yoke / tank / bottom) to a uniform
+                // cell size of `lc`. Without this gmsh's 1D mesher is free to subdivide a
+                // ~1 m long edge with just a handful of nodes (since we disable
+                // MeshSizeFromPoints when the background field is active), and the 2D
+                // mesher then has to bridge from finely-spaced conductor edges to those
+                // sparse wall nodes — producing the long sliver-triangle fans you see
+                // along the tank wall and top yoke. SizeMin == SizeMax means "always lc
+                // along this boundary" regardless of distance from it.
+                var outerEntities = new List<object>();
+                if (oil_surf?.Boundary?.Boundary != null)
+                {
+                    foreach (var ent in oil_surf.Boundary.Boundary)
+                    {
+                        outerEntities.Add(ent);
+                    }
+                }
+                if (outerEntities.Count > 0)
+                {
+                    gmsh.AddDistanceRefinement(
+                        curves: outerEntities,
+                        sizeMin: lc,
+                        sizeMax: lc,
+                        distMin: 0.0,
+                        distMax: lc,
+                        sampling: 50);
+                }
+
                 gmsh.GenerateMesh(mshOut, lc);
 
                 problem.MeshFile = mshOut;
