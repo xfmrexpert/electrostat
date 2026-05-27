@@ -45,9 +45,21 @@
                     <views:GeometryView Geometry="{Binding CurrentGeometry}"/>
                 </TabItem>
                 <TabItem Header="Results">
-                    <views:ResultsView Solution="{Binding CurrentSolution}"
-                                       FieldName="V"
-                                       ShowMesh="True"/>
+                    <Grid RowDefinitions="Auto,*">
+                        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="12"
+                                    Margin="6,4">
+                            <TextBlock Text="Field:" VerticalAlignment="Center"/>
+                            <ComboBox ItemsSource="{Binding AvailableFields}"
+                                      SelectedItem="{Binding SelectedField, Mode=TwoWay}"
+                                      MinWidth="80"/>
+                            <CheckBox Content="Show mesh"
+                                      IsChecked="{Binding ShowResultsMesh, Mode=TwoWay}"/>
+                        </StackPanel>
+                        <views:ResultsView Grid.Row="1"
+                                           Solution="{Binding CurrentSolution}"
+                                           FieldName="{Binding SelectedField}"
+                                           ShowMesh="{Binding ShowResultsMesh}"/>
+                    </Grid>
                 </TabItem>
             </TabControl>
         </Border>

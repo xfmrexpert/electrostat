@@ -849,10 +849,32 @@ namespace electrostat
             int oil_tag = tags.TagEntityByString(oil_surf, "Oil");
             var region = new Region("Oil", [oil_tag], oil);
             problem.Regions.Add(region);
-            tags.TagEntityByString(left_bdry, "Core");
-            tags.TagEntityByString(top_bdry, "TopYoke");
-            tags.TagEntityByString(right_bdry, "Tank");
-            tags.TagEntityByString(bottom_bdry, "Lower_Bdry");
+            int leftTag = tags.TagEntityByString(left_bdry, "Core");
+            int topTag = tags.TagEntityByString(top_bdry, "TopYoke");
+            int rightTag = tags.TagEntityByString(right_bdry, "Tank");
+            int bottomTag = tags.TagEntityByString(bottom_bdry, "Lower_Bdry");
+
+            // Domain-wall Dirichlet BCs. Each of the four outer-domain edges was tagged
+            // above as its own physical curve; emit a DirichletBoundaryCondition for any
+            // wall whose name appears in the case's voltages map. Without this the walls
+            // are treated as natural (Neumann) boundaries and the potential floats — this
+            // is what was causing the top and right edges to show non-zero V even though
+            // the input deck specifies 0 V for "TopYoke" and "Tank".
+            void AddWallBC(string name, int tag)
+            {
+                if (tag <= 0) return;
+                if (!voltages.TryGetValue(name, out var v)) return;
+                problem.BoundaryConditions.Add(new DirichletBoundaryCondition
+                {
+                    Name = name,
+                    Tags = new List<int> { tag },
+                    Potential = v,
+                });
+            }
+            AddWallBC("Core", leftTag);
+            AddWallBC("TopYoke", topTag);
+            AddWallBC("Tank", rightTag);
+            AddWallBC("Lower_Bdry", bottomTag);
             // Loops whose surviving (post-clip, post-split) boundary segments should be
             // refined. Captured here as loops rather than tags so we can resolve them to
             // GeomLine/GeomArc instances after SplitLinesAtIncidentPoints() runs.
@@ -863,8 +885,6 @@ namespace electrostat
             // Track components for clipping
             var componentSurfaces = new List<(GeomSurface surf, string name, string type)>();
             var electrodes = new List<(GeomSurface surf, string name, string type)>();
-
-            electrodes.Add((oil_surf, "Tank", "domain_bdry"));
 
             // --- Phase 1: Build FULL geometry (unrestricted by domain) ---
             foreach (var w in windings)
