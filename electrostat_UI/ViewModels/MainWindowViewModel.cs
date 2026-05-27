@@ -29,6 +29,14 @@ namespace electrostat_UI.ViewModels
         [ObservableProperty]
         private bool _isSolving;
 
+        public string[] AvailableFields { get; } = new[] { "V", "|E|" };
+
+        [ObservableProperty]
+        private string _selectedField = "V";
+
+        [ObservableProperty]
+        private bool _showResultsMesh = true;
+
         public MainWindowViewModel()
         {
             Examples = new ObservableCollection<ElectrostatCase>(electrostat.Examples.All());
