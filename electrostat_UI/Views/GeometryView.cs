@@ -26,6 +26,15 @@ namespace electrostat_UI.Views
             set => SetValue(GeometryProperty, value);
         }
 
+        public static readonly StyledProperty<IReadOnlyList<GeomSurface>?> HighlightedSurfacesProperty =
+            AvaloniaProperty.Register<GeometryView, IReadOnlyList<GeomSurface>?>(nameof(HighlightedSurfaces));
+
+        public IReadOnlyList<GeomSurface>? HighlightedSurfaces
+        {
+            get => GetValue(HighlightedSurfacesProperty);
+            set => SetValue(HighlightedSurfacesProperty, value);
+        }
+
         // User-applied transform (relative to the auto-fit baseline).
         // World-to-screen is: screen = (autoFit(world) - _panOrigin) * _zoom + _panOrigin + _panOffset
         // Implemented in Render via a translate-scale-translate composition.
@@ -38,6 +47,7 @@ namespace electrostat_UI.Views
         static GeometryView()
         {
             AffectsRender<GeometryView>(GeometryProperty);
+            AffectsRender<GeometryView>(HighlightedSurfacesProperty);
         }
 
         public GeometryView()
@@ -200,6 +210,21 @@ namespace electrostat_UI.Views
             {
                 DrawSurface(context, surf, Map, null, stroke);
             }
+
+            // Highlight pass: draw selected surfaces with a bold accent stroke + tinted fill
+            // on top of everything else so they pop even when unselected fills overlap.
+            var highlights = HighlightedSurfaces;
+            if (highlights != null && highlights.Count > 0)
+            {
+                var hiFill = new SolidColorBrush(Color.FromArgb(80, 255, 140, 0));
+                var hiPen = new Pen(new SolidColorBrush(Color.FromArgb(255, 255, 80, 0)),
+                                    3.0 / _zoom);
+                foreach (var surf in highlights)
+                {
+                    if (surf == null) continue;
+                    DrawSurface(context, surf, Map, hiFill, hiPen);
+                }
+            }
         }
 
         private static bool IsFinite(double v) => !double.IsNaN(v) && !double.IsInfinity(v);
@@ -219,7 +244,7 @@ namespace electrostat_UI.Views
             return palette[i % palette.Length];
         }
 
-        private static void DrawSurface(
+        internal static void DrawSurface(
             DrawingContext context,
             GeomSurface surf,
             Func<double, double, Point> map,
@@ -239,7 +264,7 @@ namespace electrostat_UI.Views
             context.DrawGeometry(fill, stroke, sg);
         }
 
-        private static void AppendLoop(
+        internal static void AppendLoop(
             StreamGeometryContext ctx,
             GeomLineLoop loop,
             Func<double, double, Point> map,

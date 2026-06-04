@@ -17,6 +17,38 @@ namespace electrostat
         public static FEMProblem? problem = new();
 
         /// <summary>
+        /// Map from a component's case-defined name (e.g. "HV", "PB_inner",
+        /// "SR_TOP_HV_inner_Metal") to the GeomSurface(s) it produced. Populated
+        /// during <see cref="BuildModel"/> so the UI can highlight selected
+        /// components in the geometry view.
+        /// </summary>
+        public static Dictionary<string, List<GeomSurface>> ComponentSurfaces { get; } = new();
+
+        /// <summary>
+        /// Surfaces that act as electrodes (Dirichlet-V conductors) in the most recent
+        /// build: windings and static-ring metals. Used by analysis features (e.g.
+        /// streamline tracing) that should terminate only on conductor boundaries
+        /// rather than on dielectric (pressboard / paper) interfaces.
+        /// </summary>
+        public static List<GeomSurface> ElectrodeSurfaces { get; } = new();
+
+        /// <summary>
+        /// Outer-domain wall edges that carry a Dirichlet BC in the most recent build
+        /// (e.g. core / tank / yoke). Each loop is a single-segment loop wrapping one
+        /// boundary line so the streamline clipper can terminate traces against them
+        /// the same way it terminates against electrode surfaces.
+        /// </summary>
+        public static List<GeomLineLoop> DirichletWallLoops { get; } = new();
+
+        private static void RegisterComponentSurface(string name, GeomSurface surf)
+        {
+            if (string.IsNullOrEmpty(name) || surf == null) return;
+            if (!ComponentSurfaces.TryGetValue(name, out var list))
+                ComponentSurfaces[name] = list = new List<GeomSurface>();
+            list.Add(surf);
+        }
+
+        /// <summary>
         /// Create rectangle for the winding block and fillet only the top-left and top-right corners.
         /// Returns the surface tag (pre-boolean).
         /// </summary>
@@ -758,6 +790,8 @@ namespace electrostat
         public static void ResetGeometry()
         {
             geometry = new Geometry();
+            ElectrodeSurfaces.Clear();
+            DirichletWallLoops.Clear();
         }
 
         /// <summary>
@@ -779,6 +813,29 @@ namespace electrostat
                 clipToDomain: clipToDomain,
                 generateMesh: true);
             RunGetDPAnalysis();
+
+            // The MFEM solver does not currently emit a $PhysicalNames section in its
+            // results.msh, so populate FEMSolution.PhysicalNames from the names we
+            // already know at build time (regions + Dirichlet BCs). This lets
+            // downstream code (e.g. the streamline Wiedmann overlay) look up a
+            // human-readable material name for each physical tag.
+            var sol = problem?.Solution;
+            if (sol != null)
+            {
+                foreach (var r in problem!.Regions)
+                {
+                    if (string.IsNullOrEmpty(r.Name)) continue;
+                    foreach (var t in r.Tags)
+                        sol.PhysicalNames[t] = r.Name;
+                }
+                foreach (var bc in problem.BoundaryConditions)
+                {
+                    if (string.IsNullOrEmpty(bc.Name)) continue;
+                    foreach (var t in bc.Tags)
+                        sol.PhysicalNames.TryAdd(t, bc.Name);
+                }
+            }
+
             return problem;
         }
 
@@ -875,6 +932,19 @@ namespace electrostat
             AddWallBC("TopYoke", topTag);
             AddWallBC("Tank", rightTag);
             AddWallBC("Lower_Bdry", bottomTag);
+
+            // Mirror the same Dirichlet-wall information as single-edge loops so the
+            // streamline clipper can terminate traces on these walls as if they were
+            // electrode surfaces.
+            void RegisterWallElectrode(string name, GeomLine edge)
+            {
+                if (!voltages.ContainsKey(name)) return;
+                DirichletWallLoops.Add(new GeomLineLoop(new List<GeomEntity> { edge }));
+            }
+            RegisterWallElectrode("Core", left_bdry);
+            RegisterWallElectrode("TopYoke", top_bdry);
+            RegisterWallElectrode("Tank", right_bdry);
+            RegisterWallElectrode("Lower_Bdry", bottom_bdry);
             // Loops whose surviving (post-clip, post-split) boundary segments should be
             // refined. Captured here as loops rather than tags so we can resolve them to
             // GeomLine/GeomArc instances after SplitLinesAtIncidentPoints() runs.
@@ -894,6 +964,8 @@ namespace electrostat
                 componentSurfaces.Add((wdg_block_surf, w.Name, "winding"));
                 tags.TagEntityByString(wdg_block_surf.Boundary, w.Name + "Bdry");
                 electrodes.Add((wdg_block_surf, w.Name, "winding"));
+                ElectrodeSurfaces.Add(wdg_block_surf);
+                RegisterComponentSurface(w.Name, wdg_block_surf);
             }
 
             foreach (var pb in pressboards)
@@ -903,6 +975,7 @@ namespace electrostat
                 componentSurfaces.Add((pb_surf, pb.Name, "pressboard"));
                 var pb_region = new Region(pb.Name, [pb_tag], pressboard);
                 problem.Regions.Add(pb_region);
+                RegisterComponentSurface(pb.Name, pb_surf);
             }
 
             foreach (var ar in angleRings)
@@ -912,6 +985,7 @@ namespace electrostat
                 componentSurfaces.Add((ar_surf, ar.Name, "anglering"));
                 var ar_region = new Region(ar.Name, [ar_tag], pressboard);
                 problem.Regions.Add(ar_region);
+                RegisterComponentSurface(ar.Name, ar_surf);
             }
 
             foreach (var sr in staticRings)
@@ -921,10 +995,13 @@ namespace electrostat
                 //tags.TagEntityByString(metal_surf, sr.Name + "_Metal");
                 tags.TagEntityByString(metal_surf.Boundary, sr.Name + "_Metal_Bdry");
                 electrodes.Add((metal_surf, sr.Name + "_Metal", "static_metal"));
+                ElectrodeSurfaces.Add(metal_surf);
                 int paper_tag = tags.TagEntityByString(paper_surf, sr.Name + "_Paper");
                 componentSurfaces.Add((paper_surf, sr.Name + "_Paper", "static_paper"));
                 var paper_region = new Region(sr.Name+"_Paper", [paper_tag], paper);
                 problem.Regions.Add(paper_region);
+                RegisterComponentSurface(sr.Name, paper_surf);
+                RegisterComponentSurface(sr.Name, metal_surf);
             }
 
             // --- Phase 2: Clip components to domain (if enabled) ---

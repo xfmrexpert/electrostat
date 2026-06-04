@@ -16,6 +16,13 @@
     <Compile Remove="electrostat_UI\**" />
     <None Remove="electrostat_UI\**" />
     <EmbeddedResource Remove="electrostat_UI\**" />
+    <Compile Remove="tools\**" />
+    <None Remove="tools\**" />
+    <EmbeddedResource Remove="tools\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="tools\StreamlineSmokeTest\StreamlineSmokeTest.csproj" />
   </ItemGroup>
 
 </Project>
