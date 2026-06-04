@@ -9,6 +9,9 @@ using Avalonia.Skia;
 using MeshLib;
 using SkiaSharp;
 using TfmrLib.FEM;
+using GeomGeometry = GeometryLib.Geometry;
+using GeometryLib;
+using electrostat;
 
 namespace electrostat_UI.Views
 {
@@ -36,6 +39,18 @@ namespace electrostat_UI.Views
         public static readonly StyledProperty<bool> ShowMeshProperty =
             AvaloniaProperty.Register<ResultsView, bool>(nameof(ShowMesh), true);
 
+        public static readonly StyledProperty<IReadOnlyList<StreamlineWithMargin>?> StreamlinesProperty =
+            AvaloniaProperty.Register<ResultsView, IReadOnlyList<StreamlineWithMargin>?>(nameof(Streamlines));
+
+        public static readonly StyledProperty<bool> ShowStreamlinesProperty =
+            AvaloniaProperty.Register<ResultsView, bool>(nameof(ShowStreamlines), true);
+
+        public static readonly StyledProperty<GeomGeometry?> GeometryProperty =
+            AvaloniaProperty.Register<ResultsView, GeomGeometry?>(nameof(Geometry));
+
+        public static readonly StyledProperty<bool> ShowGeometryOutlinesProperty =
+            AvaloniaProperty.Register<ResultsView, bool>(nameof(ShowGeometryOutlines), true);
+
         public FEMSolution? Solution
         {
             get => GetValue(SolutionProperty);
@@ -52,6 +67,30 @@ namespace electrostat_UI.Views
         {
             get => GetValue(ShowMeshProperty);
             set => SetValue(ShowMeshProperty, value);
+        }
+
+        public IReadOnlyList<StreamlineWithMargin>? Streamlines
+        {
+            get => GetValue(StreamlinesProperty);
+            set => SetValue(StreamlinesProperty, value);
+        }
+
+        public bool ShowStreamlines
+        {
+            get => GetValue(ShowStreamlinesProperty);
+            set => SetValue(ShowStreamlinesProperty, value);
+        }
+
+        public GeomGeometry? Geometry
+        {
+            get => GetValue(GeometryProperty);
+            set => SetValue(GeometryProperty, value);
+        }
+
+        public bool ShowGeometryOutlines
+        {
+            get => GetValue(ShowGeometryOutlinesProperty);
+            set => SetValue(ShowGeometryOutlinesProperty, value);
         }
 
         // View transform (screen pixels).
@@ -75,7 +114,9 @@ namespace electrostat_UI.Views
 
         static ResultsView()
         {
-            AffectsRender<ResultsView>(SolutionProperty, FieldNameProperty, ShowMeshProperty);
+            AffectsRender<ResultsView>(SolutionProperty, FieldNameProperty, ShowMeshProperty,
+                StreamlinesProperty, ShowStreamlinesProperty,
+                GeometryProperty, ShowGeometryOutlinesProperty);
         }
 
         public ResultsView()
@@ -229,6 +270,128 @@ namespace electrostat_UI.Views
                 _cachedVertices,
                 ShowMesh ? _cachedEdgePath : null,
                 matrix));
+
+            // Geometry outlines overlay (drawn before streamlines so streamlines stay on top).
+            var geom = Geometry;
+            if (ShowGeometryOutlines && geom != null && geom.Surfaces.Count > 0)
+            {
+                DrawGeometryOutlines(context, geom, sx, tx, sy, ty);
+            }
+
+            // Streamline overlay (Avalonia path on top of the GPU mesh).
+            var lines = Streamlines;
+            if (ShowStreamlines && lines != null && lines.Count > 0)
+            {
+                DrawStreamlines(context, lines, sx, tx, sy, ty);
+            }
+        }
+
+        /// <summary>
+        /// Render the boundary curves of every <see cref="GeomSurface"/> in the
+        /// geometry as black hairlines, mirroring the outline pass in
+        /// <see cref="GeometryView"/>. The first surface (oil/domain box) is included
+        /// so the outer extent is visible.
+        /// </summary>
+        private void DrawGeometryOutlines(
+            DrawingContext context,
+            GeomGeometry geom,
+            float sx, float tx, float sy, float ty)
+        {
+            using var _ = context.PushTransform(
+                Matrix.CreateScale(_zoom, _zoom) * Matrix.CreateTranslation(_pan.X, _pan.Y));
+
+            Point Map(double x, double y) => new(sx * x + tx, sy * y + ty);
+
+            // The transform above scales strokes by _zoom; divide it back out so the
+            // outline keeps a constant on-screen thickness regardless of zoom.
+            double width = 1.0 / Math.Max(_zoom, 1e-6);
+            var stroke = new Pen(
+                new SolidColorBrush(Color.FromArgb(220, 0, 0, 0)),
+                width);
+
+            foreach (var surf in geom.Surfaces)
+            {
+                GeometryView.DrawSurface(context, surf, Map, fill: null, stroke);
+            }
+        }
+
+        private void DrawStreamlines(
+            DrawingContext context,
+            IReadOnlyList<StreamlineWithMargin> lines,
+            float sx, float tx, float sy, float ty)
+        {
+            // Apply pan/zoom on top of the world->fitted-screen mapping (sx,tx,sy,ty).
+            using var _ = context.PushTransform(
+                Matrix.CreateScale(_zoom, _zoom) * Matrix.CreateTranslation(_pan.X, _pan.Y));
+
+            Point Map(double x, double y) => new(sx * x + tx, sy * y + ty);
+
+            // Cache pens by quantized stress fraction so we don't allocate per segment.
+            // A negative bucket index is used to flag "no Weidmann constraint" (solid /
+            // metal regions where the curves don't apply); those segments are drawn in
+            // a neutral gray so they don't read as "safe oil".
+            const int kBuckets = 32;
+            var pens = new Pen[kBuckets + 1];
+            Pen? naPen = null;
+            // The transform above scales strokes by _zoom; divide it back out so
+            // streamlines keep a constant on-screen thickness regardless of zoom.
+            double width = 1.5 / Math.Max(_zoom, 1e-6);
+            Pen GetPen(double frac, bool applicable)
+            {
+                if (!applicable)
+                {
+                    return naPen ??= new Pen(
+                        new SolidColorBrush(Color.FromArgb(180, 120, 120, 120)), width);
+                }
+                if (double.IsNaN(frac) || frac < 0) frac = 0;
+                if (frac > 1) frac = 1;
+                int b = (int)Math.Round(frac * kBuckets);
+                if (pens[b] == null)
+                {
+                    var c = MarginColor(b / (double)kBuckets);
+                    pens[b] = new Pen(new SolidColorBrush(c), width);
+                }
+                return pens[b];
+            }
+
+            foreach (var lm in lines)
+            {
+                var pts = lm.Points;
+                if (pts.Count < 2) continue;
+
+                for (int i = 1; i < pts.Count; i++)
+                {
+                    var a = pts[i - 1];
+                    var bp = pts[i];
+                    bool applicable = !double.IsPositiveInfinity(a.EAllow)
+                                   && !double.IsPositiveInfinity(bp.EAllow);
+                    double frac = 0.5 * (a.StressFraction + bp.StressFraction);
+                    context.DrawLine(GetPen(frac, applicable), Map(a.X, a.Y), Map(bp.X, bp.Y));
+                }
+            }
+        }
+
+        /// <summary>
+        /// Green → yellow → red ramp for streamline stress fraction (|E| / E_allow).
+        /// At fraction == 1 the streamline is at the Wiedmann limit; > 1 saturates red.
+        /// </summary>
+        private static Color MarginColor(double t)
+        {
+            if (t < 0) t = 0; else if (t > 1) t = 1;
+            byte r, g;
+            if (t < 0.5)
+            {
+                double u = t / 0.5;
+                r = (byte)Math.Round(255 * u);
+                g = 200;
+            }
+            else
+            {
+                double u = (t - 0.5) / 0.5;
+                r = 255;
+                g = (byte)Math.Round(200 * (1 - u));
+            }
+            return Color.FromArgb(220, r, g, 30);
         }
 
         /// <summary>

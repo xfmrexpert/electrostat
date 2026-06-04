@@ -1,10 +1,13 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Linq;
 using System.Threading.Tasks;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using electrostat;
+using electrostat_UI.ViewModels.Components;
 using GeometryLib;
 using TfmrLib.FEM;
 
@@ -14,8 +17,22 @@ namespace electrostat_UI.ViewModels
     {
         public ObservableCollection<ElectrostatCase> Examples { get; }
 
+        public ObservableCollection<CaseTreeNode> CaseTree { get; } = new();
+
         [ObservableProperty]
         private ElectrostatCase? _selectedExample;
+
+        [ObservableProperty]
+        private ElectrostatCaseViewModel? _editingCase;
+
+        [ObservableProperty]
+        private CaseTreeNode? _selectedTreeNode;
+
+        [ObservableProperty]
+        private object? _selectedComponent;
+
+        [ObservableProperty]
+        private IReadOnlyList<GeomSurface>? _highlightedSurfaces;
 
         [ObservableProperty]
         private Geometry? _currentGeometry;
@@ -35,11 +52,28 @@ namespace electrostat_UI.ViewModels
         private string _selectedField = "V";
 
         [ObservableProperty]
-        private bool _showResultsMesh = true;
+        private bool _showResultsMesh = false;
+
+        [ObservableProperty]
+        private bool _showResultsOutlines = true;
+
+        [ObservableProperty]
+        private IReadOnlyList<StreamlineWithMargin>? _streamlines;
+
+        [ObservableProperty]
+        private bool _showStreamlines = true;
+
+        // Coalesces rapid edits (e.g. while dragging a NumericUpDown spinner) into a
+        // single geometry rebuild so the UI stays responsive.
+        private readonly DispatcherTimer _rebuildTimer;
 
         public MainWindowViewModel()
         {
             Examples = new ObservableCollection<ElectrostatCase>(electrostat.Examples.All());
+
+            _rebuildTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(75) };
+            _rebuildTimer.Tick += (_, _) => { _rebuildTimer.Stop(); RebuildGeometry(); };
+
             if (Examples.Count > 0)
             {
                 SelectedExample = Examples[0];
@@ -49,38 +83,203 @@ namespace electrostat_UI.ViewModels
         partial void OnSelectedExampleChanged(ElectrostatCase? value)
         {
             CurrentSolution = null;
+            Streamlines = null;
             SolveCommand.NotifyCanExecuteChanged();
 
-            if (value == null)
+            if (EditingCase != null)
+                EditingCase.Changed -= OnCaseChanged;
+
+            EditingCase = value != null ? new ElectrostatCaseViewModel(value) : null;
+
+            if (EditingCase != null)
+                EditingCase.Changed += OnCaseChanged;
+
+            RebuildCaseTree();
+            RebuildGeometry();
+        }
+
+        private void OnCaseChanged()
+        {
+            // Debounce: restart the timer on every change.
+            _rebuildTimer.Stop();
+            _rebuildTimer.Start();
+            RebuildCaseTree();
+        }
+
+        partial void OnSelectedTreeNodeChanged(CaseTreeNode? value)
+        {
+            SelectedComponent = value?.Model;
+            UpdateHighlight();
+        }
+
+        private void UpdateHighlight()
+        {
+            var key = SelectedComponent switch
+            {
+                ComponentViewModel cv => cv.SurfaceKey,
+                _ => null,
+            };
+
+            if (key == null ||
+                !GeometryBuilder.ComponentSurfaces.TryGetValue(key, out var list))
+            {
+                HighlightedSurfaces = null;
+                return;
+            }
+
+            // Filter to surfaces still present in the current geometry (some may have
+            // been removed after clipping / electrode-interior pruning).
+            var current = CurrentGeometry;
+            if (current == null)
+            {
+                HighlightedSurfaces = list;
+                return;
+            }
+            var live = new HashSet<GeomSurface>(current.Surfaces, ReferenceEqualityComparer.Instance);
+            HighlightedSurfaces = list.Where(s => live.Contains(s)).ToList();
+        }
+
+        private void RebuildGeometry()
+        {
+            var ec = EditingCase;
+            if (ec == null)
             {
                 CurrentGeometry = null;
-                StatusMessage = "No example selected.";
+                HighlightedSurfaces = null;
+                StatusMessage = "No case loaded.";
                 return;
             }
 
             try
             {
-                CurrentGeometry = GeometryBuilder.BuildGeometryOnly(
-                    value, clipToDomain: true);
-                StatusMessage = $"Loaded: {value.Name} ({CurrentGeometry.Surfaces.Count} surfaces)";
+                var model = ec.ToModel();
+                CurrentGeometry = GeometryBuilder.BuildGeometryOnly(model, clipToDomain: true);
+                StatusMessage = $"{model.Name}: {CurrentGeometry.Surfaces.Count} surfaces";
+                UpdateHighlight();
             }
             catch (Exception ex)
             {
                 CurrentGeometry = null;
-                StatusMessage = $"Failed to build {value.Name}: {ex.Message}";
+                HighlightedSurfaces = null;
+                StatusMessage = $"Failed to build {ec.Name}: {ex.Message}";
             }
         }
 
-        private bool CanSolve() => SelectedExample != null && !IsSolving;
+        [RelayCommand]
+        private void SelectExample(ElectrostatCase? example)
+        {
+            if (example != null)
+                SelectedExample = example;
+        }
+
+        // ---- Add / Remove component commands ----
+
+        [RelayCommand]
+        private void AddWinding()
+        {
+            if (EditingCase == null) return;
+            EditingCase.Windings.Add(new WindingViewModel
+            {
+                Name = UniqueName("Winding", EditingCase.Windings.Select(x => x.Name)),
+                R0 = 100, ZBottom = 0, Width = 50, Height = 200, FilletR = 1
+            });
+        }
+
+        [RelayCommand]
+        private void AddPressboard()
+        {
+            if (EditingCase == null) return;
+            EditingCase.Pressboards.Add(new PressboardViewModel
+            {
+                Name = UniqueName("PB", EditingCase.Pressboards.Select(x => x.Name)),
+                R0 = 100, ZBottom = 0, Thickness = 3, Height = 200
+            });
+        }
+
+        [RelayCommand]
+        private void AddAngleRing()
+        {
+            if (EditingCase == null) return;
+            EditingCase.AngleRings.Add(new AngleRingViewModel
+            {
+                Name = UniqueName("AR", EditingCase.AngleRings.Select(x => x.Name)),
+                R0 = 100, ZCorner = 0, Tv = 3, Hv = 50, Th = 3, Wh = 50, InsideFilletR = 5
+            });
+        }
+
+        [RelayCommand]
+        private void AddStaticRing()
+        {
+            if (EditingCase == null) return;
+            EditingCase.StaticRings.Add(new StaticRingViewModel
+            {
+                Name = UniqueName("SR", EditingCase.StaticRings.Select(x => x.Name)),
+                R0 = 100, ZBottom = 0, Width = 30, Height = 12, TPaper = 2
+            });
+        }
+
+        [RelayCommand]
+        private void RemoveSelected()
+        {
+            if (EditingCase == null) return;
+            switch (SelectedComponent)
+            {
+                case WindingViewModel w: EditingCase.Windings.Remove(w); break;
+                case PressboardViewModel p: EditingCase.Pressboards.Remove(p); break;
+                case AngleRingViewModel a: EditingCase.AngleRings.Remove(a); break;
+                case StaticRingViewModel s: EditingCase.StaticRings.Remove(s); break;
+            }
+        }
+
+        private static string UniqueName(string baseName, IEnumerable<string> existing)
+        {
+            var set = new HashSet<string>(existing, StringComparer.OrdinalIgnoreCase);
+            int i = 1;
+            string n;
+            do { n = $"{baseName}_{i++}"; } while (set.Contains(n));
+            return n;
+        }
+
+        private void RebuildCaseTree()
+        {
+            CaseTree.Clear();
+            var ec = EditingCase;
+            if (ec == null) return;
+
+            var root = new CaseTreeNode(ec.Name, ec);
+
+            root.Children.Add(new CaseTreeNode("Domain", ec.Domain));
+
+            var w = new CaseTreeNode($"Windings ({ec.Windings.Count})");
+            foreach (var x in ec.Windings) w.Children.Add(new CaseTreeNode(x.Name, x));
+            root.Children.Add(w);
+
+            var p = new CaseTreeNode($"Pressboards ({ec.Pressboards.Count})");
+            foreach (var x in ec.Pressboards) p.Children.Add(new CaseTreeNode(x.Name, x));
+            root.Children.Add(p);
+
+            var a = new CaseTreeNode($"Angle Rings ({ec.AngleRings.Count})");
+            foreach (var x in ec.AngleRings) a.Children.Add(new CaseTreeNode(x.Name, x));
+            root.Children.Add(a);
+
+            var s = new CaseTreeNode($"Static Rings ({ec.StaticRings.Count})");
+            foreach (var x in ec.StaticRings) s.Children.Add(new CaseTreeNode(x.Name, x));
+            root.Children.Add(s);
+
+            CaseTree.Add(root);
+        }
+
+        private bool CanSolve() => EditingCase != null && !IsSolving;
 
         [RelayCommand(CanExecute = nameof(CanSolve))]
         private async Task SolveAsync()
         {
-            var ex = SelectedExample;
-            if (ex == null) return;
+            var ec = EditingCase;
+            if (ec == null) return;
 
             IsSolving = true;
             SolveCommand.NotifyCanExecuteChanged();
+            var ex = ec.ToModel();
             StatusMessage = $"Solving {ex.Name}...";
 
             try
@@ -89,12 +288,13 @@ namespace electrostat_UI.ViewModels
                 var problem = await Task.Run(() =>
                     GeometryBuilder.BuildAndSolve(ex, caseName, lc: 5.0, clipToDomain: true));
 
-                // Rebuild geometry view to match what we solved.
                 CurrentGeometry = GeometryBuilder.geometry;
+                UpdateHighlight();
 
                 CurrentSolution = problem?.Solution;
                 if (CurrentSolution == null)
                 {
+                    Streamlines = null;
                     var reason = (problem as MFEMProblem)?.LastLoadError;
                     var resultsPath = (problem as MFEMProblem)?.ResultsFile;
                     StatusMessage = $"Solve completed but no results were loaded for {ex.Name}. " +
@@ -102,8 +302,11 @@ namespace electrostat_UI.ViewModels
                 }
                 else
                 {
+                    Streamlines = await Task.Run(() =>
+                        BuildStreamlines(CurrentSolution!, CurrentGeometry));
                     StatusMessage = $"Solved {ex.Name}. Nodal views: {CurrentSolution.NodalScalars.Count}, " +
-                                    $"elements: {CurrentSolution.Mesh?.Elements.Count ?? 0}.";
+                                    $"elements: {CurrentSolution.Mesh?.Elements.Count ?? 0}, " +
+                                    $"streamlines: {Streamlines?.Count ?? 0}.";
                 }
             }
             catch (Exception exc)
@@ -127,5 +330,125 @@ namespace electrostat_UI.ViewModels
                 sb.Append(char.IsLetterOrDigit(c) ? c : '_');
             return sb.ToString();
         }
+
+        /// <summary>
+        /// Generate a representative set of streamlines through the solved domain by
+        /// seeding from a coarse grid and tracing forward + backward along E. Lines
+        /// terminate when they cross a conductor boundary or leave the meshed domain.
+        /// </summary>
+        private static IReadOnlyList<StreamlineWithMargin> BuildStreamlines(FEMSolution sol, Geometry? geom)
+        {
+            var lines = new List<StreamlineWithMargin>();
+            if (sol.Mesh == null || sol.Mesh.Nodes.Count == 0) return lines;
+
+            FemFieldSampler sampler;
+            try { sampler = new FemFieldSampler(sol); }
+            catch { return lines; }
+
+            var bounds = sampler.Locator.Bounds;
+            double dx = bounds.MaxX - bounds.MinX;
+            double dy = bounds.MaxY - bounds.MinY;
+            if (dx <= 0 || dy <= 0) return lines;
+
+            // Step size scales with the domain so trace cost is bounded across cases.
+            double diag = Math.Sqrt(dx * dx + dy * dy);
+            double step = Math.Max(diag / 1500.0, 1e-3);
+
+            // Build a clipper from electrode surfaces only. Streamlines should
+            // pass through dielectrics (pressboard, paper, oil) and only terminate
+            // on conductors (windings, static-ring metals, Dirichlet domain walls).
+            GeometryClipper? clipper = null;
+            var loops = new List<ClipLoop>();
+            int nextId = 0;
+            foreach (var surf in GeometryBuilder.ElectrodeSurfaces)
+                loops.Add(new ClipLoop(nextId++, surf.Boundary, IsHole: true));
+            foreach (var wallLoop in GeometryBuilder.DirichletWallLoops)
+                loops.Add(new ClipLoop(nextId++, wallLoop, IsHole: false));
+            if (loops.Count > 0)
+                clipper = new GeometryClipper(loops);
+            var optsFwd = new StreamlineTracerOptions
+            {
+                StepSize = step,
+                MaxSteps = 5000,
+                Direction = TraceDirection.Forward,
+            };
+            var optsBwd = new StreamlineTracerOptions
+            {
+                StepSize = step,
+                MaxSteps = 5000,
+                Direction = TraceDirection.Backward,
+            };
+            var tracerFwd = new StreamlineTracer(sampler, optsFwd, clipper);
+            var tracerBwd = new StreamlineTracer(sampler, optsBwd, clipper);
+
+            // Seed from electrode boundaries rather than a uniform volume grid: the
+            // worst-case dielectric stress is a surface phenomenon (it peaks at conductor
+            // surfaces and high-curvature fillets/corners), so a box grid over-samples
+            // bulk oil and misses the lines that matter. All electrodes are treated
+            // uniformly. The strategy is pluggable via IStreamlineSeedStrategy.
+            var boundaries = new List<GeomLineLoop>();
+            foreach (var surf in GeometryBuilder.ElectrodeSurfaces)
+                boundaries.Add(surf.Boundary);
+            boundaries.AddRange(GeometryBuilder.DirichletWallLoops);
+
+            var seedContext = new StreamlineSeedContext
+            {
+                Sampler = sampler,
+                Boundaries = boundaries,
+                StepSize = step,
+            };
+            IStreamlineSeedStrategy seedStrategy = new ElectrodeBoundarySeedStrategy();
+
+            foreach (var seed in seedStrategy.GenerateSeeds(seedContext))
+            {
+                {
+                    double x = seed.X;
+                    double y = seed.Y;
+
+                    sampler.ResetHint();
+                    var b = tracerBwd.Trace(x, y);
+                    sampler.ResetHint();
+                    var f = tracerFwd.Trace(x, y);
+
+                    if (b.Points.Count + f.Points.Count < 2) continue;
+
+                    // Only keep streamlines that terminate on an electrode at both ends.
+                    // Lines that exit the meshed domain (top of window, axis, etc.) without
+                    // hitting a conductor are usually fragments from poorly-placed seeds
+                    // and clutter the plot.
+                    bool bHit = b.TerminationReason == TraceTerminationReason.HitConductor;
+                    bool fHit = f.TerminationReason == TraceTerminationReason.HitConductor;
+                    if (!bHit || !fHit) continue;
+
+                    // Stitch backward-trace (reversed) + forward-trace into a single polyline.
+                    var pts = new List<StreamlinePoint>(b.Points.Count + f.Points.Count);
+                    for (int k = b.Points.Count - 1; k >= 0; k--) pts.Add(b.Points[k]);
+                    for (int k = 1; k < f.Points.Count; k++) pts.Add(f.Points[k]);
+
+                    lines.Add(StreamlineMarginCalculator.Compute(
+                        new Streamline
+                        {
+                            Points = pts,
+                            TotalLength = b.TotalLength + f.TotalLength,
+                            TerminationReason = f.TerminationReason,
+                        },
+                        sol.PhysicalNames,
+                        s_designCurves));
+                }
+            }
+
+            // Only the worst-case streamlines are of interest for design validation.
+            // Keep the 20 highest-stress lines (by |E| / E_allow) and drop the rest.
+            const int maxLines = 20;
+            if (lines.Count > maxLines)
+            {
+                lines.Sort((a, b) => b.MaxStressFraction.CompareTo(a.MaxStressFraction));
+                lines.RemoveRange(maxLines, lines.Count - maxLines);
+            }
+
+            return lines;
+        }
+
+        private static readonly IDesignCurves s_designCurves = new DefaultWiedmannCurves();
     }
 }

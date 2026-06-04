@@ -1,10 +1,11 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:electrostat_UI.ViewModels"
+        xmlns:cvm="using:electrostat_UI.ViewModels.Components"
         xmlns:views="using:electrostat_UI.Views"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="700"
+        mc:Ignorable="d" d:DesignWidth="1100" d:DesignHeight="750"
         x:Class="electrostat_UI.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Icon="/Assets/avalonia-logo.ico"
@@ -14,35 +15,210 @@
         <vm:MainWindowViewModel/>
     </Design.DataContext>
 
-    <Grid RowDefinitions="Auto,*,Auto" ColumnDefinitions="260,*">
-        <TextBlock Grid.Row="0" Grid.ColumnSpan="2"
-                   Text="Electrostat – Geometry Preview"
-                   FontSize="18" FontWeight="SemiBold"
-                   Margin="12,8"/>
+    <Window.Resources>
+        <!-- Per-type property editors. Each binds straight to its VM. -->
+        <DataTemplate x:Key="DomainEditor" x:DataType="cvm:DomainViewModel">
+            <StackPanel Spacing="4">
+                <TextBlock Text="Domain" FontWeight="SemiBold"/>
+                <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="2" ColumnSpacing="6">
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="R inner" VerticalAlignment="Center"/>
+                    <NumericUpDown Grid.Row="0" Grid.Column="1" Value="{Binding RInner}"/>
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="R outer" VerticalAlignment="Center"/>
+                    <NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding ROuter}"/>
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Z lower" VerticalAlignment="Center"/>
+                    <NumericUpDown Grid.Row="2" Grid.Column="1" Value="{Binding ZLower}"/>
+                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Z upper" VerticalAlignment="Center"/>
+                    <NumericUpDown Grid.Row="3" Grid.Column="1" Value="{Binding ZUpper}"/>
+                </Grid>
+            </StackPanel>
+        </DataTemplate>
 
-        <StackPanel Grid.Row="1" Grid.Column="0" Margin="8" Spacing="6">
-            <TextBlock Text="Examples" FontWeight="SemiBold"/>
-            <ListBox ItemsSource="{Binding Examples}"
-                     SelectedItem="{Binding SelectedExample, Mode=TwoWay}">
-                <ListBox.ItemTemplate>
-                    <DataTemplate>
+        <DataTemplate x:Key="WindingEditor" x:DataType="cvm:WindingViewModel">
+            <StackPanel Spacing="4">
+                <TextBlock Text="Winding" FontWeight="SemiBold"/>
+                <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="2" ColumnSpacing="6">
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Name" VerticalAlignment="Center"/>
+                    <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Name}"/>
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="R0" VerticalAlignment="Center"/>
+                    <NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding R0}"/>
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Z bottom" VerticalAlignment="Center"/>
+                    <NumericUpDown Grid.Row="2" Grid.Column="1" Value="{Binding ZBottom}"/>
+                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Width" VerticalAlignment="Center"/>
+                    <NumericUpDown Grid.Row="3" Grid.Column="1" Value="{Binding Width}"/>
+                    <TextBlock Grid.Row="4" Grid.Column="0" Text="Height" VerticalAlignment="Center"/>
+                    <NumericUpDown Grid.Row="4" Grid.Column="1" Value="{Binding Height}"/>
+                    <TextBlock Grid.Row="5" Grid.Column="0" Text="Fillet R" VerticalAlignment="Center"/>
+                    <NumericUpDown Grid.Row="5" Grid.Column="1" Value="{Binding FilletR}"/>
+                    <TextBlock Grid.Row="6" Grid.Column="0" Text="Voltage" VerticalAlignment="Center"/>
+                    <NumericUpDown Grid.Row="6" Grid.Column="1" Value="{Binding Voltage}"/>
+                </Grid>
+            </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate x:Key="PressboardEditor" x:DataType="cvm:PressboardViewModel">
+            <StackPanel Spacing="4">
+                <TextBlock Text="Pressboard" FontWeight="SemiBold"/>
+                <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="2" ColumnSpacing="6">
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Name" VerticalAlignment="Center"/>
+                    <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Name}"/>
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="R0" VerticalAlignment="Center"/>
+                    <NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding R0}"/>
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Z bottom" VerticalAlignment="Center"/>
+                    <NumericUpDown Grid.Row="2" Grid.Column="1" Value="{Binding ZBottom}"/>
+                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Thickness" VerticalAlignment="Center"/>
+                    <NumericUpDown Grid.Row="3" Grid.Column="1" Value="{Binding Thickness}"/>
+                    <TextBlock Grid.Row="4" Grid.Column="0" Text="Height" VerticalAlignment="Center"/>
+                    <NumericUpDown Grid.Row="4" Grid.Column="1" Value="{Binding Height}"/>
+                </Grid>
+            </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate x:Key="AngleRingEditor" x:DataType="cvm:AngleRingViewModel">
+            <StackPanel Spacing="4">
+                <TextBlock Text="Angle Ring" FontWeight="SemiBold"/>
+                <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="2" ColumnSpacing="6">
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Name" VerticalAlignment="Center"/>
+                    <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Name}"/>
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="R0" VerticalAlignment="Center"/>
+                    <NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding R0}"/>
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Z corner" VerticalAlignment="Center"/>
+                    <NumericUpDown Grid.Row="2" Grid.Column="1" Value="{Binding ZCorner}"/>
+                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Tv" VerticalAlignment="Center"/>
+                    <NumericUpDown Grid.Row="3" Grid.Column="1" Value="{Binding Tv}"/>
+                    <TextBlock Grid.Row="4" Grid.Column="0" Text="Hv" VerticalAlignment="Center"/>
+                    <NumericUpDown Grid.Row="4" Grid.Column="1" Value="{Binding Hv}"/>
+                    <TextBlock Grid.Row="5" Grid.Column="0" Text="Th" VerticalAlignment="Center"/>
+                    <NumericUpDown Grid.Row="5" Grid.Column="1" Value="{Binding Th}"/>
+                    <TextBlock Grid.Row="6" Grid.Column="0" Text="Wh" VerticalAlignment="Center"/>
+                    <NumericUpDown Grid.Row="6" Grid.Column="1" Value="{Binding Wh}"/>
+                    <TextBlock Grid.Row="7" Grid.Column="0" Text="Fillet R" VerticalAlignment="Center"/>
+                    <NumericUpDown Grid.Row="7" Grid.Column="1" Value="{Binding InsideFilletR}"/>
+                </Grid>
+            </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate x:Key="StaticRingEditor" x:DataType="cvm:StaticRingViewModel">
+            <StackPanel Spacing="4">
+                <TextBlock Text="Static Ring" FontWeight="SemiBold"/>
+                <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="2" ColumnSpacing="6">
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Name" VerticalAlignment="Center"/>
+                    <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Name}"/>
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="R0" VerticalAlignment="Center"/>
+                    <NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding R0}"/>
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Z bottom" VerticalAlignment="Center"/>
+                    <NumericUpDown Grid.Row="2" Grid.Column="1" Value="{Binding ZBottom}"/>
+                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Width" VerticalAlignment="Center"/>
+                    <NumericUpDown Grid.Row="3" Grid.Column="1" Value="{Binding Width}"/>
+                    <TextBlock Grid.Row="4" Grid.Column="0" Text="Height" VerticalAlignment="Center"/>
+                    <NumericUpDown Grid.Row="4" Grid.Column="1" Value="{Binding Height}"/>
+                    <TextBlock Grid.Row="5" Grid.Column="0" Text="R TL" VerticalAlignment="Center"/>
+                    <NumericUpDown Grid.Row="5" Grid.Column="1" Value="{Binding RTL}"/>
+                    <TextBlock Grid.Row="6" Grid.Column="0" Text="R TR" VerticalAlignment="Center"/>
+                    <NumericUpDown Grid.Row="6" Grid.Column="1" Value="{Binding RTR}"/>
+                    <TextBlock Grid.Row="7" Grid.Column="0" Text="R BR" VerticalAlignment="Center"/>
+                    <NumericUpDown Grid.Row="7" Grid.Column="1" Value="{Binding RBR}"/>
+                    <TextBlock Grid.Row="8" Grid.Column="0" Text="R BL" VerticalAlignment="Center"/>
+                    <NumericUpDown Grid.Row="8" Grid.Column="1" Value="{Binding RBL}"/>
+                    <TextBlock Grid.Row="9" Grid.Column="0" Text="T paper" VerticalAlignment="Center"/>
+                    <NumericUpDown Grid.Row="9" Grid.Column="1" Value="{Binding TPaper}"/>
+                    <TextBlock Grid.Row="10" Grid.Column="0" Text="Voltage" VerticalAlignment="Center"/>
+                    <NumericUpDown Grid.Row="10" Grid.Column="1" Value="{Binding Voltage}"/>
+                </Grid>
+            </StackPanel>
+        </DataTemplate>
+    </Window.Resources>
+
+    <Window.DataTemplates>
+        <!-- Auto-pick the right editor for whatever SelectedComponent is. -->
+        <DataTemplate DataType="cvm:DomainViewModel">
+            <ContentControl Content="{Binding}"
+                            ContentTemplate="{StaticResource DomainEditor}"/>
+        </DataTemplate>
+        <DataTemplate DataType="cvm:WindingViewModel">
+            <ContentControl Content="{Binding}"
+                            ContentTemplate="{StaticResource WindingEditor}"/>
+        </DataTemplate>
+        <DataTemplate DataType="cvm:PressboardViewModel">
+            <ContentControl Content="{Binding}"
+                            ContentTemplate="{StaticResource PressboardEditor}"/>
+        </DataTemplate>
+        <DataTemplate DataType="cvm:AngleRingViewModel">
+            <ContentControl Content="{Binding}"
+                            ContentTemplate="{StaticResource AngleRingEditor}"/>
+        </DataTemplate>
+        <DataTemplate DataType="cvm:StaticRingViewModel">
+            <ContentControl Content="{Binding}"
+                            ContentTemplate="{StaticResource StaticRingEditor}"/>
+        </DataTemplate>
+    </Window.DataTemplates>
+
+    <Grid RowDefinitions="Auto,*,Auto" ColumnDefinitions="280,*">
+        <Menu Grid.Row="0" Grid.ColumnSpan="2">
+            <MenuItem Header="_File">
+                <MenuItem Header="_Examples"
+                          ItemsSource="{Binding Examples}">
+                    <MenuItem.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Name}"/>
+                        </DataTemplate>
+                    </MenuItem.ItemTemplate>
+                    <MenuItem.Styles>
+                        <Style Selector="MenuItem">
+                            <Setter Property="Command"
+                                    Value="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).SelectExampleCommand}"/>
+                            <Setter Property="CommandParameter" Value="{Binding}"/>
+                        </Style>
+                    </MenuItem.Styles>
+                </MenuItem>
+                <Separator/>
+                <MenuItem Header="E_xit"/>
+            </MenuItem>
+            <MenuItem Header="_Edit">
+                <MenuItem Header="Add _Winding" Command="{Binding AddWindingCommand}"/>
+                <MenuItem Header="Add _Pressboard" Command="{Binding AddPressboardCommand}"/>
+                <MenuItem Header="Add _Angle Ring" Command="{Binding AddAngleRingCommand}"/>
+                <MenuItem Header="Add _Static Ring" Command="{Binding AddStaticRingCommand}"/>
+                <Separator/>
+                <MenuItem Header="_Remove Selected" Command="{Binding RemoveSelectedCommand}"/>
+            </MenuItem>
+            <MenuItem Header="_Run">
+                <MenuItem Header="_Solve" Command="{Binding SolveCommand}"/>
+            </MenuItem>
+        </Menu>
+
+        <Grid Grid.Row="1" Grid.Column="0" Margin="8" RowDefinitions="Auto,2*,Auto,3*,Auto">
+            <TextBlock Grid.Row="0" Text="Case" FontWeight="SemiBold" Margin="0,0,0,4"/>
+            <TreeView Grid.Row="1"
+                      ItemsSource="{Binding CaseTree}"
+                      SelectedItem="{Binding SelectedTreeNode, Mode=TwoWay}">
+                <TreeView.ItemTemplate>
+                    <TreeDataTemplate ItemsSource="{Binding Children}"
+                                      x:DataType="vm:CaseTreeNode">
                         <TextBlock Text="{Binding Name}"/>
-                    </DataTemplate>
-                </ListBox.ItemTemplate>
-            </ListBox>
-            <Button Content="Solve"
-                    Command="{Binding SolveCommand}"
-                    HorizontalAlignment="Stretch"/>
-            <ProgressBar IsIndeterminate="True"
+                    </TreeDataTemplate>
+                </TreeView.ItemTemplate>
+            </TreeView>
+
+            <GridSplitter Grid.Row="2" Height="4" HorizontalAlignment="Stretch"
+                          Background="Transparent"/>
+
+            <Border Grid.Row="3" BorderBrush="Gray" BorderThickness="1" Padding="8">
+                <ScrollViewer>
+                    <ContentControl Content="{Binding SelectedComponent}"/>
+                </ScrollViewer>
+            </Border>
+
+            <ProgressBar Grid.Row="4" IsIndeterminate="True"
                          IsVisible="{Binding IsSolving}"
-                         Height="6"/>
-        </StackPanel>
+                         Height="6" Margin="0,6,0,0"/>
+        </Grid>
 
         <Border Grid.Row="1" Grid.Column="1" Margin="8"
                 BorderBrush="Gray" BorderThickness="1">
             <TabControl>
                 <TabItem Header="Geometry">
-                    <views:GeometryView Geometry="{Binding CurrentGeometry}"/>
+                    <views:GeometryView Geometry="{Binding CurrentGeometry}"
+                                        HighlightedSurfaces="{Binding HighlightedSurfaces}"/>
                 </TabItem>
                 <TabItem Header="Results">
                     <Grid RowDefinitions="Auto,*">
@@ -54,11 +230,19 @@
                                       MinWidth="80"/>
                             <CheckBox Content="Show mesh"
                                       IsChecked="{Binding ShowResultsMesh, Mode=TwoWay}"/>
+                            <CheckBox Content="Show outlines"
+                                      IsChecked="{Binding ShowResultsOutlines, Mode=TwoWay}"/>
+                            <CheckBox Content="Show streamlines"
+                                      IsChecked="{Binding ShowStreamlines, Mode=TwoWay}"/>
                         </StackPanel>
                         <views:ResultsView Grid.Row="1"
                                            Solution="{Binding CurrentSolution}"
                                            FieldName="{Binding SelectedField}"
-                                           ShowMesh="{Binding ShowResultsMesh}"/>
+                                           ShowMesh="{Binding ShowResultsMesh}"
+                                           Geometry="{Binding CurrentGeometry}"
+                                           ShowGeometryOutlines="{Binding ShowResultsOutlines}"
+                                           Streamlines="{Binding Streamlines}"
+                                           ShowStreamlines="{Binding ShowStreamlines}"/>
                     </Grid>
                 </TabItem>
             </TabControl>
