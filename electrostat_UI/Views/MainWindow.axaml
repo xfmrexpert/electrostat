@@ -3,6 +3,7 @@
         xmlns:vm="using:electrostat_UI.ViewModels"
         xmlns:cvm="using:electrostat_UI.ViewModels.Components"
         xmlns:views="using:electrostat_UI.Views"
+        xmlns:cviews="using:electrostat_UI.Views.Components"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d" d:DesignWidth="1100" d:DesignHeight="750"
@@ -15,140 +16,22 @@
         <vm:MainWindowViewModel/>
     </Design.DataContext>
 
-    <Window.Resources>
-        <!-- Per-type property editors. Each binds straight to its VM. -->
-        <DataTemplate x:Key="DomainEditor" x:DataType="cvm:DomainViewModel">
-            <StackPanel Spacing="4">
-                <TextBlock Text="Domain" FontWeight="SemiBold"/>
-                <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="2" ColumnSpacing="6">
-                    <TextBlock Grid.Row="0" Grid.Column="0" Text="R inner" VerticalAlignment="Center"/>
-                    <NumericUpDown Grid.Row="0" Grid.Column="1" Value="{Binding RInner}"/>
-                    <TextBlock Grid.Row="1" Grid.Column="0" Text="R outer" VerticalAlignment="Center"/>
-                    <NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding ROuter}"/>
-                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Z lower" VerticalAlignment="Center"/>
-                    <NumericUpDown Grid.Row="2" Grid.Column="1" Value="{Binding ZLower}"/>
-                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Z upper" VerticalAlignment="Center"/>
-                    <NumericUpDown Grid.Row="3" Grid.Column="1" Value="{Binding ZUpper}"/>
-                </Grid>
-            </StackPanel>
-        </DataTemplate>
-
-        <DataTemplate x:Key="WindingEditor" x:DataType="cvm:WindingViewModel">
-            <StackPanel Spacing="4">
-                <TextBlock Text="Winding" FontWeight="SemiBold"/>
-                <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="2" ColumnSpacing="6">
-                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Name" VerticalAlignment="Center"/>
-                    <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Name}"/>
-                    <TextBlock Grid.Row="1" Grid.Column="0" Text="R0" VerticalAlignment="Center"/>
-                    <NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding R0}"/>
-                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Z bottom" VerticalAlignment="Center"/>
-                    <NumericUpDown Grid.Row="2" Grid.Column="1" Value="{Binding ZBottom}"/>
-                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Width" VerticalAlignment="Center"/>
-                    <NumericUpDown Grid.Row="3" Grid.Column="1" Value="{Binding Width}"/>
-                    <TextBlock Grid.Row="4" Grid.Column="0" Text="Height" VerticalAlignment="Center"/>
-                    <NumericUpDown Grid.Row="4" Grid.Column="1" Value="{Binding Height}"/>
-                    <TextBlock Grid.Row="5" Grid.Column="0" Text="Fillet R" VerticalAlignment="Center"/>
-                    <NumericUpDown Grid.Row="5" Grid.Column="1" Value="{Binding FilletR}"/>
-                    <TextBlock Grid.Row="6" Grid.Column="0" Text="Voltage" VerticalAlignment="Center"/>
-                    <NumericUpDown Grid.Row="6" Grid.Column="1" Value="{Binding Voltage}"/>
-                </Grid>
-            </StackPanel>
-        </DataTemplate>
-
-        <DataTemplate x:Key="PressboardEditor" x:DataType="cvm:PressboardViewModel">
-            <StackPanel Spacing="4">
-                <TextBlock Text="Pressboard" FontWeight="SemiBold"/>
-                <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="2" ColumnSpacing="6">
-                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Name" VerticalAlignment="Center"/>
-                    <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Name}"/>
-                    <TextBlock Grid.Row="1" Grid.Column="0" Text="R0" VerticalAlignment="Center"/>
-                    <NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding R0}"/>
-                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Z bottom" VerticalAlignment="Center"/>
-                    <NumericUpDown Grid.Row="2" Grid.Column="1" Value="{Binding ZBottom}"/>
-                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Thickness" VerticalAlignment="Center"/>
-                    <NumericUpDown Grid.Row="3" Grid.Column="1" Value="{Binding Thickness}"/>
-                    <TextBlock Grid.Row="4" Grid.Column="0" Text="Height" VerticalAlignment="Center"/>
-                    <NumericUpDown Grid.Row="4" Grid.Column="1" Value="{Binding Height}"/>
-                </Grid>
-            </StackPanel>
-        </DataTemplate>
-
-        <DataTemplate x:Key="AngleRingEditor" x:DataType="cvm:AngleRingViewModel">
-            <StackPanel Spacing="4">
-                <TextBlock Text="Angle Ring" FontWeight="SemiBold"/>
-                <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="2" ColumnSpacing="6">
-                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Name" VerticalAlignment="Center"/>
-                    <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Name}"/>
-                    <TextBlock Grid.Row="1" Grid.Column="0" Text="R0" VerticalAlignment="Center"/>
-                    <NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding R0}"/>
-                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Z corner" VerticalAlignment="Center"/>
-                    <NumericUpDown Grid.Row="2" Grid.Column="1" Value="{Binding ZCorner}"/>
-                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Tv" VerticalAlignment="Center"/>
-                    <NumericUpDown Grid.Row="3" Grid.Column="1" Value="{Binding Tv}"/>
-                    <TextBlock Grid.Row="4" Grid.Column="0" Text="Hv" VerticalAlignment="Center"/>
-                    <NumericUpDown Grid.Row="4" Grid.Column="1" Value="{Binding Hv}"/>
-                    <TextBlock Grid.Row="5" Grid.Column="0" Text="Th" VerticalAlignment="Center"/>
-                    <NumericUpDown Grid.Row="5" Grid.Column="1" Value="{Binding Th}"/>
-                    <TextBlock Grid.Row="6" Grid.Column="0" Text="Wh" VerticalAlignment="Center"/>
-                    <NumericUpDown Grid.Row="6" Grid.Column="1" Value="{Binding Wh}"/>
-                    <TextBlock Grid.Row="7" Grid.Column="0" Text="Fillet R" VerticalAlignment="Center"/>
-                    <NumericUpDown Grid.Row="7" Grid.Column="1" Value="{Binding InsideFilletR}"/>
-                </Grid>
-            </StackPanel>
-        </DataTemplate>
-
-        <DataTemplate x:Key="StaticRingEditor" x:DataType="cvm:StaticRingViewModel">
-            <StackPanel Spacing="4">
-                <TextBlock Text="Static Ring" FontWeight="SemiBold"/>
-                <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="2" ColumnSpacing="6">
-                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Name" VerticalAlignment="Center"/>
-                    <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Name}"/>
-                    <TextBlock Grid.Row="1" Grid.Column="0" Text="R0" VerticalAlignment="Center"/>
-                    <NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding R0}"/>
-                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Z bottom" VerticalAlignment="Center"/>
-                    <NumericUpDown Grid.Row="2" Grid.Column="1" Value="{Binding ZBottom}"/>
-                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Width" VerticalAlignment="Center"/>
-                    <NumericUpDown Grid.Row="3" Grid.Column="1" Value="{Binding Width}"/>
-                    <TextBlock Grid.Row="4" Grid.Column="0" Text="Height" VerticalAlignment="Center"/>
-                    <NumericUpDown Grid.Row="4" Grid.Column="1" Value="{Binding Height}"/>
-                    <TextBlock Grid.Row="5" Grid.Column="0" Text="R TL" VerticalAlignment="Center"/>
-                    <NumericUpDown Grid.Row="5" Grid.Column="1" Value="{Binding RTL}"/>
-                    <TextBlock Grid.Row="6" Grid.Column="0" Text="R TR" VerticalAlignment="Center"/>
-                    <NumericUpDown Grid.Row="6" Grid.Column="1" Value="{Binding RTR}"/>
-                    <TextBlock Grid.Row="7" Grid.Column="0" Text="R BR" VerticalAlignment="Center"/>
-                    <NumericUpDown Grid.Row="7" Grid.Column="1" Value="{Binding RBR}"/>
-                    <TextBlock Grid.Row="8" Grid.Column="0" Text="R BL" VerticalAlignment="Center"/>
-                    <NumericUpDown Grid.Row="8" Grid.Column="1" Value="{Binding RBL}"/>
-                    <TextBlock Grid.Row="9" Grid.Column="0" Text="T paper" VerticalAlignment="Center"/>
-                    <NumericUpDown Grid.Row="9" Grid.Column="1" Value="{Binding TPaper}"/>
-                    <TextBlock Grid.Row="10" Grid.Column="0" Text="Voltage" VerticalAlignment="Center"/>
-                    <NumericUpDown Grid.Row="10" Grid.Column="1" Value="{Binding Voltage}"/>
-                </Grid>
-            </StackPanel>
-        </DataTemplate>
-    </Window.Resources>
-
     <Window.DataTemplates>
-        <!-- Auto-pick the right editor for whatever SelectedComponent is. -->
+        <!-- Auto-pick the right editor view for whatever SelectedComponent is. -->
         <DataTemplate DataType="cvm:DomainViewModel">
-            <ContentControl Content="{Binding}"
-                            ContentTemplate="{StaticResource DomainEditor}"/>
+            <cviews:DomainEditorView/>
         </DataTemplate>
         <DataTemplate DataType="cvm:WindingViewModel">
-            <ContentControl Content="{Binding}"
-                            ContentTemplate="{StaticResource WindingEditor}"/>
+            <cviews:WindingEditorView/>
         </DataTemplate>
         <DataTemplate DataType="cvm:PressboardViewModel">
-            <ContentControl Content="{Binding}"
-                            ContentTemplate="{StaticResource PressboardEditor}"/>
+            <cviews:PressboardEditorView/>
         </DataTemplate>
         <DataTemplate DataType="cvm:AngleRingViewModel">
-            <ContentControl Content="{Binding}"
-                            ContentTemplate="{StaticResource AngleRingEditor}"/>
+            <cviews:AngleRingEditorView/>
         </DataTemplate>
         <DataTemplate DataType="cvm:StaticRingViewModel">
-            <ContentControl Content="{Binding}"
-                            ContentTemplate="{StaticResource StaticRingEditor}"/>
+            <cviews:StaticRingEditorView/>
         </DataTemplate>
     </Window.DataTemplates>
 
@@ -162,13 +45,13 @@
                             <TextBlock Text="{Binding Name}"/>
                         </DataTemplate>
                     </MenuItem.ItemTemplate>
-                    <MenuItem.Styles>
-                        <Style Selector="MenuItem">
+                    <MenuItem.ItemContainerTheme>
+                        <ControlTheme TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
                             <Setter Property="Command"
                                     Value="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).SelectExampleCommand}"/>
                             <Setter Property="CommandParameter" Value="{Binding}"/>
-                        </Style>
-                    </MenuItem.Styles>
+                        </ControlTheme>
+                    </MenuItem.ItemContainerTheme>
                 </MenuItem>
                 <Separator/>
                 <MenuItem Header="E_xit"/>
@@ -243,6 +126,55 @@
                                            ShowGeometryOutlines="{Binding ShowResultsOutlines}"
                                            Streamlines="{Binding Streamlines}"
                                            ShowStreamlines="{Binding ShowStreamlines}"/>
+                    </Grid>
+                </TabItem>
+                <TabItem Header="Streamline Stress">
+                    <Grid RowDefinitions="Auto,Auto,*">
+                        <TextBlock Grid.Row="0" Margin="6,4"
+                                   Text="Per-streamline cumulative-method stress summary (worst margin first). E_avg/E_design are the governing cumulative average stress and distance-dependent withstand. Fields in kV/mm, lengths in mm."
+                                   TextWrapping="Wrap"/>
+
+                        <!-- Header row. Column widths must match the row template below. -->
+                        <Border Grid.Row="1" BorderBrush="Gray" BorderThickness="0,0,0,1"
+                                Background="{DynamicResource SystemControlBackgroundListLowBrush}">
+                            <Grid Margin="6,2"
+                                  ColumnDefinitions="50,*,*,90,*,*,*,60,110,*">
+                                <TextBlock Grid.Column="0" Text="#" FontWeight="SemiBold"/>
+                                <TextBlock Grid.Column="1" Text="E_avg" FontWeight="SemiBold" HorizontalAlignment="Right"/>
+                                <TextBlock Grid.Column="2" Text="E_design" FontWeight="SemiBold" HorizontalAlignment="Right"/>
+                                <TextBlock Grid.Column="3" Text="Margin" FontWeight="SemiBold" HorizontalAlignment="Right"/>
+                                <TextBlock Grid.Column="4" Text="Max |E|" FontWeight="SemiBold" HorizontalAlignment="Right"/>
+                                <TextBlock Grid.Column="5" Text="Drop (kV)" FontWeight="SemiBold" HorizontalAlignment="Right"/>
+                                <TextBlock Grid.Column="6" Text="Length" FontWeight="SemiBold" HorizontalAlignment="Right"/>
+                                <TextBlock Grid.Column="7" Text="Segs" FontWeight="SemiBold" HorizontalAlignment="Right"/>
+                                <TextBlock Grid.Column="8" Text="Peak (x,y)" FontWeight="SemiBold" HorizontalAlignment="Right"/>
+                                <TextBlock Grid.Column="9" Text="Termination" FontWeight="SemiBold" Margin="8,0,0,0"/>
+                            </Grid>
+                        </Border>
+
+                        <ScrollViewer Grid.Row="2">
+                            <ItemsControl ItemsSource="{Binding StreamlineSummary}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:StreamlineSummaryRow">
+                                        <Border BorderBrush="LightGray" BorderThickness="0,0,0,1">
+                                            <Grid Margin="6,2"
+                                                  ColumnDefinitions="50,*,*,90,*,*,*,60,110,*">
+                                                <TextBlock Grid.Column="0" Text="{Binding Name}"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding PeakField, StringFormat='{}{0:N1}'}" HorizontalAlignment="Right"/>
+                                                <TextBlock Grid.Column="2" Text="{Binding AllowableField, StringFormat='{}{0:N1}'}" HorizontalAlignment="Right"/>
+                                                <TextBlock Grid.Column="3" Text="{Binding MarginText}" HorizontalAlignment="Right"/>
+                                                <TextBlock Grid.Column="4" Text="{Binding MaxField, StringFormat='{}{0:N1}'}" HorizontalAlignment="Right"/>
+                                                <TextBlock Grid.Column="5" Text="{Binding TotalDrop, StringFormat='{}{0:N1}'}" HorizontalAlignment="Right"/>
+                                                <TextBlock Grid.Column="6" Text="{Binding Length, StringFormat='{}{0:N1}'}" HorizontalAlignment="Right"/>
+                                                <TextBlock Grid.Column="7" Text="{Binding SegmentCount}" HorizontalAlignment="Right"/>
+                                                <TextBlock Grid.Column="8" Text="{Binding PeakLocation}" HorizontalAlignment="Right"/>
+                                                <TextBlock Grid.Column="9" Text="{Binding Termination}" Margin="8,0,0,0"/>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
                     </Grid>
                 </TabItem>
             </TabControl>

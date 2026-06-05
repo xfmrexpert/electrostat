@@ -1,0 +1,28 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+			 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+			 xmlns:cvm="using:electrostat_UI.ViewModels.Components"
+			 xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+			 xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+			 mc:Ignorable="d" d:DesignWidth="260" d:DesignHeight="240"
+			 x:Class="electrostat_UI.Views.Components.WindingEditorView"
+			 x:DataType="cvm:WindingViewModel">
+	<StackPanel Spacing="4">
+		<TextBlock Text="Winding" FontWeight="SemiBold"/>
+		<Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="2" ColumnSpacing="6">
+			<TextBlock Grid.Row="0" Grid.Column="0" Text="Name" VerticalAlignment="Center"/>
+			<TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Name}"/>
+			<TextBlock Grid.Row="1" Grid.Column="0" Text="R0" VerticalAlignment="Center"/>
+			<NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding R0}"/>
+			<TextBlock Grid.Row="2" Grid.Column="0" Text="Z bottom" VerticalAlignment="Center"/>
+			<NumericUpDown Grid.Row="2" Grid.Column="1" Value="{Binding ZBottom}"/>
+			<TextBlock Grid.Row="3" Grid.Column="0" Text="Width" VerticalAlignment="Center"/>
+			<NumericUpDown Grid.Row="3" Grid.Column="1" Value="{Binding Width}"/>
+			<TextBlock Grid.Row="4" Grid.Column="0" Text="Height" VerticalAlignment="Center"/>
+			<NumericUpDown Grid.Row="4" Grid.Column="1" Value="{Binding Height}"/>
+			<TextBlock Grid.Row="5" Grid.Column="0" Text="Fillet R" VerticalAlignment="Center"/>
+			<NumericUpDown Grid.Row="5" Grid.Column="1" Value="{Binding FilletR}"/>
+			<TextBlock Grid.Row="6" Grid.Column="0" Text="Voltage" VerticalAlignment="Center"/>
+			<NumericUpDown Grid.Row="6" Grid.Column="1" Value="{Binding Voltage}"/>
+		</Grid>
+	</StackPanel>
+</UserControl>

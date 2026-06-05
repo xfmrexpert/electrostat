@@ -9,9 +9,10 @@ namespace electrostat
     {
         /// <summary>
         /// Try to evaluate the electric field at <paramref name="x"/>,<paramref name="y"/>.
+        /// Components are returned in kV/mm.
         /// </summary>
-        /// <param name="ex">Out: field x-component (Er for axisymmetric).</param>
-        /// <param name="ey">Out: field y-component (Ez for axisymmetric).</param>
+        /// <param name="ex">Out: field x-component in kV/mm (Er for axisymmetric).</param>
+        /// <param name="ey">Out: field y-component in kV/mm (Ez for axisymmetric).</param>
         /// <param name="elementId">Out: 1-based Gmsh element id containing the point, or 0 if outside.</param>
         /// <param name="materialTag">Out: physical (material) tag of the containing element, or 0 if outside.</param>
         /// <returns><c>true</c> if the point lies inside the meshed domain.</returns>

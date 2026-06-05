@@ -11,9 +11,9 @@ namespace electrostat
     /// <param name="Length">Arc length of the run, in mesh units.</param>
     /// <param name="StartArcLength">Arc length at the start of the run, measured along the streamline.</param>
     /// <param name="EndArcLength">Arc length at the end of the run.</param>
-    /// <param name="IntegralEdL">∫|E|·dl over the run (V, when |E| is V/mm and length is mm).</param>
-    /// <param name="MaxE">Maximum |E| sample within the run.</param>
-    /// <param name="MeanE">Length-weighted mean |E| over the run, equal to <see cref="IntegralEdL"/>/<see cref="Length"/>.</param>
+    /// <param name="IntegralEdL">∫|E|·dl over the run (kV, when |E| is kV/mm and length is mm).</param>
+    /// <param name="MaxE">Maximum |E| sample within the run (kV/mm).</param>
+    /// <param name="MeanE">Length-weighted mean |E| over the run (kV/mm), equal to <see cref="IntegralEdL"/>/<see cref="Length"/>.</param>
     public readonly record struct StreamlineSegment(
         int MaterialTag,
         double Length,
@@ -34,13 +34,13 @@ namespace electrostat
         /// <summary>Aggregate length per material tag (sum of <see cref="StreamlineSegment.Length"/> for that tag).</summary>
         public required IReadOnlyDictionary<int, double> LengthByMaterial { get; init; }
 
-        /// <summary>Aggregate ∫|E|·dl per material tag.</summary>
+        /// <summary>Aggregate ∫|E|·dl per material tag (kV).</summary>
         public required IReadOnlyDictionary<int, double> IntegralEdLByMaterial { get; init; }
 
-        /// <summary>Maximum |E| seen anywhere on the streamline.</summary>
+        /// <summary>Maximum |E| seen anywhere on the streamline (kV/mm).</summary>
         public required double MaxE { get; init; }
 
-        /// <summary>Total integrated potential drop along the streamline (≈ V_start − V_end).</summary>
+        /// <summary>Total integrated potential drop along the streamline in kV (≈ V_start − V_end).</summary>
         public required double TotalIntegralEdL { get; init; }
 
         /// <summary>Total arc length.</summary>

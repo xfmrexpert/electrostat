@@ -45,7 +45,7 @@ namespace electrostat
         /// <summary>Hard cap on accumulated arc length.</summary>
         public double MaxLength { get; set; } = double.PositiveInfinity;
 
-        /// <summary>Stop if |E| drops below this threshold (V/mm in typical use).</summary>
+        /// <summary>Stop if |E| drops below this threshold (kV/mm in typical use).</summary>
         public double MinFieldMagnitude { get; set; } = 0.0;
 
         /// <summary>Direction of integration relative to E.</summary>
@@ -53,7 +53,8 @@ namespace electrostat
     }
 
     /// <summary>
-    /// One sampled point along a streamline.
+    /// One sampled point along a streamline. Field components (<paramref name="Ex"/>,
+    /// <paramref name="Ey"/>) and <paramref name="EMagnitude"/> are in kV/mm.
     /// </summary>
     public readonly record struct StreamlinePoint(
         double X, double Y,

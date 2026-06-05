@@ -28,7 +28,7 @@ namespace electrostat
         /// <summary>Arc-length integration step (mesh units); also the seeding scale.</summary>
         public required double StepSize { get; init; }
 
-        /// <summary>Seeds whose |E| is below this are discarded.</summary>
+        /// <summary>Seeds whose |E| (kV/mm) is below this are discarded.</summary>
         public double MinFieldMagnitude { get; init; } = 1e-9;
     }
 

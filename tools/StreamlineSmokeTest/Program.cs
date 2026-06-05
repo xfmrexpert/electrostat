@@ -167,13 +167,14 @@ if (maxErrV > 1e-6)
                               $"mean|E|={seg.MeanE,9:G4}  max|E|={seg.MaxE,9:G4}");
         }
 
-        // ∫|E|·dl along -E should equal V_end - V_start (= ΔV).
+        // ∫|E|·dl along -E should equal V_end - V_start (= ΔV). |E| is in kV/mm so the
+        // integral is in kV; convert ΔV (volts) to kV before comparing.
         if (sampler.TryEvaluateV(traced.Points[0].X, traced.Points[0].Y, out double v0, out _, out _) &&
             sampler.TryEvaluateV(traced.Points[^1].X, traced.Points[^1].Y, out double vN, out _, out _))
         {
-            double dv = vN - v0;
-            double rel = Math.Abs(stress.TotalIntegralEdL - dv) / Math.Max(Math.Abs(dv), 1e-12);
-            Console.WriteLine($"  ∫|E|dl vs ΔV: integral={stress.TotalIntegralEdL:G5}, ΔV={dv:G5}, rel-err={rel:E3}");
+            double dvKv = (vN - v0) / 1000.0;
+            double rel = Math.Abs(stress.TotalIntegralEdL - dvKv) / Math.Max(Math.Abs(dvKv), 1e-12);
+            Console.WriteLine($"  ∫|E|dl vs ΔV: integral={stress.TotalIntegralEdL:G5} kV, ΔV={dvKv:G5} kV, rel-err={rel:E3}");
             if (rel > 0.05)
             {
                 Console.WriteLine("FAIL: ∫|E|·dl does not match ΔV within 5%.");
