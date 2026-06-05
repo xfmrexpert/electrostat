@@ -20,7 +20,8 @@ namespace electrostat
     /// returned for a point in element <c>k</c> is the in-element interpolation, even
     /// when that element shares nodes with one in a different material. For 6-node
     /// (P2) triangles only the three corner samples are used; this is exact for P1
-    /// fields and a low-order approximation for P2.
+    /// fields and a low-order approximation for P2. The returned field is in kV/mm
+    /// (the raw FEM field is V/mm and is scaled here).
     /// </para>
     /// <para>
     /// A small per-instance hint is cached so successive calls (e.g. from a streamline
@@ -29,6 +30,9 @@ namespace electrostat
     /// </remarks>
     public sealed class FemFieldSampler : IFieldSampler
     {
+        /// <summary>Scale factor converting the raw FEM field (V/mm) to kV/mm.</summary>
+        private const double VPerMmToKVPerMm = 1e-3;
+
         private readonly FEMSolution _solution;
         private readonly TriangleLocator _locator;
         private readonly Dictionary<int, double>? _potential;
@@ -86,6 +90,11 @@ namespace electrostat
             double w0 = hit.B0, w1 = hit.B1, w2 = hit.B2;
             ex = w0 * field.Get(0, 0) + w1 * field.Get(1, 0) + w2 * field.Get(2, 0);
             ey = w0 * field.Get(0, 1) + w1 * field.Get(1, 1) + w2 * field.Get(2, 1);
+
+            // The raw FEM field is V/mm (geometry in mm, potentials in V). Convert to
+            // kV/mm here so the whole streamline/stress/margin pipeline works in kV/mm.
+            ex *= VPerMmToKVPerMm;
+            ey *= VPerMmToKVPerMm;
             return true;
         }
 

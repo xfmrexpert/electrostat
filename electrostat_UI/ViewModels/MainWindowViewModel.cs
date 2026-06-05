@@ -63,6 +63,9 @@ namespace electrostat_UI.ViewModels
         [ObservableProperty]
         private bool _showStreamlines = true;
 
+        /// <summary>Per-streamline stress metrics shown in the Streamline Stress tab.</summary>
+        public ObservableCollection<StreamlineSummaryRow> StreamlineSummary { get; } = new();
+
         // Coalesces rapid edits (e.g. while dragging a NumericUpDown spinner) into a
         // single geometry rebuild so the UI stays responsive.
         private readonly DispatcherTimer _rebuildTimer;
@@ -96,6 +99,20 @@ namespace electrostat_UI.ViewModels
 
             RebuildCaseTree();
             RebuildGeometry();
+        }
+
+        partial void OnStreamlinesChanged(IReadOnlyList<StreamlineWithMargin>? value)
+        {
+            StreamlineSummary.Clear();
+            if (value == null) return;
+
+            // The list arrives pre-sorted worst-first by minimum safety margin (see
+            // BuildStreamlines), so number rows by list position. This 1-based index is
+            // the same one the Results-plot hover tooltip reports, keeping the two views
+            // in sync.
+            int index = 1;
+            foreach (var s in value)
+                StreamlineSummary.Add(StreamlineSummaryRow.FromStreamline(index++, s));
         }
 
         private void OnCaseChanged()
@@ -420,6 +437,16 @@ namespace electrostat_UI.ViewModels
                     bool fHit = f.TerminationReason == TraceTerminationReason.HitConductor;
                     if (!bHit || !fHit) continue;
 
+                    // Both ends must land on *different* electrodes. A real field line runs
+                    // from higher to lower potential, so ∫E·dl along it is strictly positive
+                    // and it can never start and end on the same equipotential conductor.
+                    // Lines that report the same surface at both ends are numerical artifacts:
+                    // a seed pushed ~1.5·step off a surface whose forward and backward stubs
+                    // both curve back into that same conductor in a low-field corner. They
+                    // appear as spurious sub-mm lines (length ~ the seed offset) with a tiny
+                    // drop, so drop them.
+                    if (b.HitSurfaceId == f.HitSurfaceId) continue;
+
                     // Stitch backward-trace (reversed) + forward-trace into a single polyline.
                     var pts = new List<StreamlinePoint>(b.Points.Count + f.Points.Count);
                     for (int k = b.Points.Count - 1; k >= 0; k--) pts.Add(b.Points[k]);
@@ -437,16 +464,81 @@ namespace electrostat_UI.ViewModels
                 }
             }
 
-            // Only the worst-case streamlines are of interest for design validation.
-            // Keep the 20 highest-stress lines (by |E| / E_allow) and drop the rest.
-            const int maxLines = 20;
-            if (lines.Count > maxLines)
+            // Worst-case streamlines drive design validation, but dense boundary
+            // seeding (4x finer on fillets, see ElectrodeBoundarySeedStrategy) makes the
+            // lowest-margin lines a redundant cluster hugging a single hot fillet, which
+            // crowds other distinct critical gaps out of the displayed set. Rank by
+            // safety margin (smallest = worst first), then apply spatial non-maximum
+            // suppression on each line's governing hot-spot so the kept set covers
+            // *distinct* critical regions rather than duplicating one corner. This 1-based
+            // order is also the numbering used by the stress table and the Results-plot
+            // hover tooltip.
+            const int maxLines = 50;
+            lines.Sort((a, b) => a.MinMargin.CompareTo(b.MinMargin));
+
+            // Two kept hot-spots must be at least this far apart (domain-relative so it
+            // adapts across cases). Tuned to collapse one fillet's worth of near-identical
+            // lines while preserving genuinely separate stress regions.
+            double suppressRadius = diag * 0.02;
+            double suppress2 = suppressRadius * suppressRadius;
+
+            var kept = new List<StreamlineWithMargin>(Math.Min(maxLines, lines.Count));
+            var keptHotspots = new List<(double X, double Y)>(kept.Capacity);
+            foreach (var line in lines)
             {
-                lines.Sort((a, b) => b.MaxStressFraction.CompareTo(a.MaxStressFraction));
-                lines.RemoveRange(maxLines, lines.Count - maxLines);
+                if (kept.Count >= maxLines) break;
+                var (hx, hy) = GoverningHotspot(line);
+                bool tooClose = false;
+                foreach (var (kx, ky) in keptHotspots)
+                {
+                    double hdx = hx - kx, hdy = hy - ky;
+                    if (hdx * hdx + hdy * hdy < suppress2) { tooClose = true; break; }
+                }
+                if (tooClose) continue;
+                kept.Add(line);
+                keptHotspots.Add((hx, hy));
             }
 
-            return lines;
+            // If suppression left spare slots, backfill with the next-worst-margin lines
+            // so the plot still shows up to maxLines (diversity first, then density).
+            if (kept.Count < maxLines && kept.Count < lines.Count)
+            {
+                var keptSet = new HashSet<StreamlineWithMargin>(kept);
+                foreach (var line in lines)
+                {
+                    if (kept.Count >= maxLines) break;
+                    if (keptSet.Add(line)) kept.Add(line);
+                }
+            }
+
+            // Renumber worst-first: the *set* is spatially diversified, but the table and
+            // hover tooltip still expect #1 to be the lowest-margin line.
+            kept.Sort((a, b) => a.MinMargin.CompareTo(b.MinMargin));
+            return kept;
+        }
+
+        /// <summary>
+        /// Representative point for a streamline's critical stress, used to spatially
+        /// diversify the displayed set. Returns the location of the peak local |E| in the
+        /// governing oil gap (the worst, minimum-margin gap, matching the stress table).
+        /// Lines with no oil gap fall back to their geometric midpoint so the suppression
+        /// still spreads these unconstrained lines apart.
+        /// </summary>
+        private static (double X, double Y) GoverningHotspot(StreamlineWithMargin line)
+        {
+            OilGapCumulativeMargin? governing = null;
+            foreach (var g in line.OilGaps)
+            {
+                if (governing == null || g.GoverningMargin < governing.GoverningMargin)
+                    governing = g;
+            }
+            if (governing != null)
+                return (governing.MaxLocalEX, governing.MaxLocalEY);
+
+            var pts = line.Points;
+            if (pts.Count == 0) return (0, 0);
+            var mid = pts[pts.Count / 2];
+            return (mid.X, mid.Y);
         }
 
         private static readonly IDesignCurves s_designCurves = new DefaultWiedmannCurves();

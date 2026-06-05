@@ -12,6 +12,7 @@ using TfmrLib.FEM;
 using GeomGeometry = GeometryLib.Geometry;
 using GeometryLib;
 using electrostat;
+using electrostat_UI.ViewModels;
 
 namespace electrostat_UI.Views
 {
@@ -109,6 +110,19 @@ namespace electrostat_UI.Views
         private float _worldMinX, _worldMinY, _worldMaxX, _worldMaxY;
         private bool _hasWorldBounds;
 
+        // World->screen affine captured on the last Render (screen = (a*x+b, c*y+d)),
+        // so pointer hit-testing maps the cursor without recomputing the fit. Valid
+        // only when _hasScreenMap is true (i.e. after at least one frame with a
+        // solution).
+        private double _mapA, _mapB, _mapC, _mapD;
+        private bool _hasScreenMap;
+
+        // Hover state for the streamline tooltip. _hoverIndex is the 1-based streamline
+        // number (matches the Streamline Stress table); -1 means nothing is hovered.
+        private int _hoverIndex = -1;
+        private StreamlineSummaryRow? _hoverRow;
+        private Point _hoverPos;
+
         // Precomputed colour LUT.
         private static readonly SKColor[] s_colorLut = BuildColorLut();
 
@@ -179,7 +193,17 @@ namespace electrostat_UI.Views
             var props = e.GetCurrentPoint(this).Properties;
             if (e.ClickCount >= 2 && props.IsLeftButtonPressed)
             {
-                ResetView();
+                // Double-click on a streamline opens its stress/margin plot; otherwise
+                // fall back to the existing "reset view" behaviour.
+                int hit = HitTestStreamline(e.GetPosition(this), out _);
+                if (hit >= 1)
+                {
+                    OpenStreamlineDetail(hit);
+                }
+                else
+                {
+                    ResetView();
+                }
                 e.Handled = true;
                 return;
             }
@@ -196,12 +220,28 @@ namespace electrostat_UI.Views
         protected override void OnPointerMoved(PointerEventArgs e)
         {
             base.OnPointerMoved(e);
-            if (!_isPanning) return;
-            var pos = e.GetPosition(this);
-            var delta = pos - _lastPointerPos;
-            _lastPointerPos = pos;
-            _pan += delta;
-            InvalidateVisual();
+            if (_isPanning)
+            {
+                var pos = e.GetPosition(this);
+                var delta = pos - _lastPointerPos;
+                _lastPointerPos = pos;
+                _pan += delta;
+                // Suppress the tooltip while panning so it doesn't lag under the cursor.
+                UpdateHover(-1, null, pos);
+                InvalidateVisual();
+                return;
+            }
+
+            // Hover hit-test (cheap: a squared-distance scan over streamline segments).
+            var p = e.GetPosition(this);
+            int idx = HitTestStreamline(p, out var row);
+            UpdateHover(idx, row, p);
+        }
+
+        protected override void OnPointerExited(PointerEventArgs e)
+        {
+            base.OnPointerExited(e);
+            UpdateHover(-1, null, default);
         }
 
         protected override void OnPointerReleased(PointerReleasedEventArgs e)
@@ -212,6 +252,98 @@ namespace electrostat_UI.Views
             e.Pointer.Capture(null);
             Cursor = Cursor.Default;
             e.Handled = true;
+        }
+
+        /// <summary>
+        /// Finds the streamline whose polyline passes closest to the given screen point,
+        /// within a small pixel tolerance. Returns its 1-based index (matching the
+        /// Streamline Stress table) or -1 if none is close enough. Uses the world->screen
+        /// affine captured during the last <see cref="Render"/>.
+        /// </summary>
+        private int HitTestStreamline(Point screen, out StreamlineSummaryRow? row)
+        {
+            row = null;
+            var lines = Streamlines;
+            if (!ShowStreamlines || !_hasScreenMap || lines == null || lines.Count == 0)
+                return -1;
+
+            // Pick tolerance in screen pixels; a bit generous so thin lines are easy to hit.
+            const double tolPx = 6.0;
+            double tol2 = tolPx * tolPx;
+
+            double bestDist2 = tol2;
+            int bestIdx = -1;
+            for (int li = 0; li < lines.Count; li++)
+            {
+                var pts = lines[li].Points;
+                if (pts.Count < 2) continue;
+
+                var prev = MapWorldToScreen(pts[0].X, pts[0].Y);
+                for (int i = 1; i < pts.Count; i++)
+                {
+                    var cur = MapWorldToScreen(pts[i].X, pts[i].Y);
+                    double d2 = SegmentDistanceSquared(screen, prev, cur);
+                    if (d2 < bestDist2)
+                    {
+                        bestDist2 = d2;
+                        bestIdx = li;
+                    }
+                    prev = cur;
+                }
+            }
+
+            if (bestIdx < 0) return -1;
+            row = StreamlineSummaryRow.FromStreamline(bestIdx + 1, lines[bestIdx]);
+            return bestIdx + 1;
+        }
+
+        private Point MapWorldToScreen(double x, double y) =>
+            new(_mapA * x + _mapB, _mapC * y + _mapD);
+
+        private static double SegmentDistanceSquared(Point p, Point a, Point b)
+        {
+            double abx = b.X - a.X;
+            double aby = b.Y - a.Y;
+            double apx = p.X - a.X;
+            double apy = p.Y - a.Y;
+            double len2 = abx * abx + aby * aby;
+            double t = len2 > 0 ? (apx * abx + apy * aby) / len2 : 0;
+            if (t < 0) t = 0; else if (t > 1) t = 1;
+            double cx = a.X + t * abx;
+            double cy = a.Y + t * aby;
+            double dx = p.X - cx;
+            double dy = p.Y - cy;
+            return dx * dx + dy * dy;
+        }
+
+        /// <summary>
+        /// Updates the hovered streamline and triggers a redraw only when the hover
+        /// state actually changes, keeping idle/pan cost identical to before.
+        /// </summary>
+        private void UpdateHover(int index, StreamlineSummaryRow? row, Point pos)
+        {
+            bool posMoved = index >= 1 && pos != _hoverPos;
+            if (index == _hoverIndex && !posMoved)
+                return;
+
+            _hoverIndex = index;
+            _hoverRow = row;
+            _hoverPos = pos;
+            Cursor = index >= 1 ? new Cursor(StandardCursorType.Hand) : Cursor.Default;
+            InvalidateVisual();
+        }
+
+        private void OpenStreamlineDetail(int index)
+        {
+            var lines = Streamlines;
+            if (lines == null || index < 1 || index > lines.Count) return;
+
+            var window = new StreamlineDetailWindow(lines[index - 1], index);
+            var owner = TopLevel.GetTopLevel(this) as Window;
+            if (owner != null)
+                window.Show(owner);
+            else
+                window.Show();
         }
 
         public override void Render(DrawingContext context)
@@ -258,6 +390,12 @@ namespace electrostat_UI.Views
             float c = (float)(sy * _zoom);
             float d = (float)(ty * _zoom + _pan.Y);
 
+            // Cache the composed world->screen affine so pointer hit-testing can map the
+            // cursor back to world space without recomputing the fit. The streamline
+            // overlay maps a point as screen = (a*x + b, c*y + d) (see DrawStreamlines).
+            _mapA = a; _mapB = b; _mapC = c; _mapD = d;
+            _hasScreenMap = true;
+
             var matrix = new SKMatrix
             {
                 ScaleX = a, SkewX = 0, TransX = b,
@@ -283,6 +421,14 @@ namespace electrostat_UI.Views
             if (ShowStreamlines && lines != null && lines.Count > 0)
             {
                 DrawStreamlines(context, lines, sx, tx, sy, ty);
+
+                // Highlight the hovered streamline and draw its tooltip last so it
+                // sits above the mesh, outlines and other streamlines.
+                if (_hoverIndex >= 1 && _hoverIndex <= lines.Count)
+                {
+                    DrawHoverHighlight(context, lines[_hoverIndex - 1], sx, tx, sy, ty);
+                    DrawTooltip(context);
+                }
             }
         }
 
@@ -365,15 +511,131 @@ namespace electrostat_UI.Views
                     var bp = pts[i];
                     bool applicable = !double.IsPositiveInfinity(a.EAllow)
                                    && !double.IsPositiveInfinity(bp.EAllow);
-                    double frac = 0.5 * (a.StressFraction + bp.StressFraction);
-                    context.DrawLine(GetPen(frac, applicable), Map(a.X, a.Y), Map(bp.X, bp.Y));
+                    double sev = 0.5 * (MarginSeverity(a.Margin) + MarginSeverity(bp.Margin));
+                    context.DrawLine(GetPen(sev, applicable), Map(a.X, a.Y), Map(bp.X, bp.Y));
                 }
             }
         }
 
         /// <summary>
-        /// Green → yellow → red ramp for streamline stress fraction (|E| / E_allow).
-        /// At fraction == 1 the streamline is at the Wiedmann limit; > 1 saturates red.
+        /// Draws a translucent casing under the hovered streamline so it stands out
+        /// from its neighbours while keeping the underlying stress colour visible.
+        /// </summary>
+        private void DrawHoverHighlight(
+            DrawingContext context,
+            StreamlineWithMargin line,
+            float sx, float tx, float sy, float ty)
+        {
+            var pts = line.Points;
+            if (pts.Count < 2) return;
+
+            using var _ = context.PushTransform(
+                Matrix.CreateScale(_zoom, _zoom) * Matrix.CreateTranslation(_pan.X, _pan.Y));
+
+            Point Map(double x, double y) => new(sx * x + tx, sy * y + ty);
+
+            // Constant on-screen widths regardless of zoom.
+            double inv = 1.0 / Math.Max(_zoom, 1e-6);
+            var casing = new Pen(new SolidColorBrush(Color.FromArgb(110, 20, 20, 20)), 5.0 * inv)
+            {
+                LineCap = PenLineCap.Round,
+                LineJoin = PenLineJoin.Round,
+            };
+            var core = new Pen(new SolidColorBrush(Color.FromArgb(255, 255, 255, 255)), 1.6 * inv);
+
+            var geo = new StreamGeometry();
+            using (var gctx = geo.Open())
+            {
+                gctx.BeginFigure(Map(pts[0].X, pts[0].Y), isFilled: false);
+                for (int i = 1; i < pts.Count; i++)
+                    gctx.LineTo(Map(pts[i].X, pts[i].Y));
+                gctx.EndFigure(false);
+            }
+            context.DrawGeometry(null, casing, geo);
+            context.DrawGeometry(null, core, geo);
+        }
+
+        /// <summary>
+        /// Draws the hover tooltip (streamline number, Peak |E|, Allowable |E|, margin)
+        /// near the cursor in screen space, clamped to stay inside the control.
+        /// </summary>
+        private void DrawTooltip(DrawingContext context)
+        {
+            var row = _hoverRow;
+            if (row == null) return;
+
+            string allow = double.IsPositiveInfinity(row.AllowableField)
+                ? "n/a"
+                : $"{row.AllowableField:F2} kV/mm";
+
+            var lines = new[]
+            {
+                ($"Streamline #{row.Index}", true),
+                ($"E_avg:      {row.PeakField:F2} kV/mm", false),
+                ($"E_design:   {allow}", false),
+                ($"Margin:     {row.MarginText}", false),
+            };
+
+            const double padX = 8, padY = 6, lineGap = 2;
+            double width = 0, height = padY;
+            var formatted = new FormattedText[lines.Length];
+            for (int i = 0; i < lines.Length; i++)
+            {
+                var (text, bold) = lines[i];
+                var ft = new FormattedText(
+                    text, System.Globalization.CultureInfo.CurrentCulture,
+                    FlowDirection.LeftToRight,
+                    bold ? new Typeface(FontFamily.Default, FontStyle.Normal, FontWeight.SemiBold) : Typeface.Default,
+                    12, Brushes.White);
+                formatted[i] = ft;
+                if (ft.Width > width) width = ft.Width;
+                height += ft.Height + lineGap;
+            }
+            width += 2 * padX;
+            height += padY - lineGap;
+
+            // Offset from the cursor, then clamp inside the control bounds.
+            double x = _hoverPos.X + 16;
+            double y = _hoverPos.Y + 16;
+            if (x + width > Bounds.Width) x = _hoverPos.X - width - 16;
+            if (x < 0) x = 0;
+            if (y + height > Bounds.Height) y = Bounds.Height - height;
+            if (y < 0) y = 0;
+
+            var bg = new Rect(x, y, width, height);
+            context.DrawRectangle(
+                new SolidColorBrush(Color.FromArgb(225, 30, 30, 30)),
+                new Pen(new SolidColorBrush(Color.FromArgb(255, 90, 90, 90)), 1),
+                bg, 4, 4);
+
+            // Accent swatch keyed to the margin so the tooltip echoes the line colour.
+            double sev = MarginSeverity(row.Margin);
+            var swatch = new Rect(x + 4, y + 4, 3, height - 8);
+            context.FillRectangle(new SolidColorBrush(MarginColor(sev)), swatch);
+
+            double ty2 = y + padY;
+            foreach (var ft in formatted)
+            {
+                context.DrawText(ft, new Point(x + padX, ty2));
+                ty2 += ft.Height + lineGap;
+            }
+        }
+
+        /// <summary>
+        /// Maps a safety margin (E_allow/|E|) to a 0..1 stress severity for color-mapping:
+        /// severity = 1/margin, clamped to [0, 1]. Margin 1.0 (at the limit) → 1.0 (red);
+        /// margin ≥ 2 → ≤ 0.5; +∞ (no constraint) → 0 (green).
+        /// </summary>
+        private static double MarginSeverity(double margin)
+        {
+            if (double.IsPositiveInfinity(margin) || double.IsNaN(margin) || margin <= 0) return 0;
+            double sev = 1.0 / margin;
+            return sev > 1 ? 1 : sev;
+        }
+
+        /// <summary>
+        /// Green → yellow → red ramp for streamline stress severity (0 = safe, 1 = at/over
+        /// the Wiedmann limit; i.e. severity = 1/margin).
         /// </summary>
         private static Color MarginColor(double t)
         {
@@ -642,12 +904,14 @@ namespace electrostat_UI.Views
         }
 
         /// <summary>
-        /// Computes the per-element average |E| if available.
+        /// Computes the per-element average |E| (kV/mm) if available.
         /// </summary>
         private static bool TryComputeEMagnitudePerElement(
             FEMSolution sol,
             out Dictionary<int, double> magnitudes)
         {
+            // The raw FEM field is V/mm; scale to kV/mm to match the rest of the pipeline.
+            const double vPerMmToKVPerMm = 1e-3;
             magnitudes = new Dictionary<int, double>();
             Dictionary<int, ElementNodeField>? source = null;
             foreach (var key in new[] { "E", "ElectricField", "E_field" })
@@ -674,7 +938,7 @@ namespace electrostat_UI.Views
                     }
                     sum += Math.Sqrt(sq);
                 }
-                magnitudes[elemId] = sum / field.NumNodes;
+                magnitudes[elemId] = sum / field.NumNodes * vPerMmToKVPerMm;
             }
             return magnitudes.Count > 0;
         }

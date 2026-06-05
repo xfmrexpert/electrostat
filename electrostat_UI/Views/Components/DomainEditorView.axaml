@@ -1,0 +1,22 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+			 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+			 xmlns:cvm="using:electrostat_UI.ViewModels.Components"
+			 xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+			 xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+			 mc:Ignorable="d" d:DesignWidth="260" d:DesignHeight="160"
+			 x:Class="electrostat_UI.Views.Components.DomainEditorView"
+			 x:DataType="cvm:DomainViewModel">
+	<StackPanel Spacing="4">
+		<TextBlock Text="Domain" FontWeight="SemiBold"/>
+		<Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="2" ColumnSpacing="6">
+			<TextBlock Grid.Row="0" Grid.Column="0" Text="R inner" VerticalAlignment="Center"/>
+			<NumericUpDown Grid.Row="0" Grid.Column="1" Value="{Binding RInner}"/>
+			<TextBlock Grid.Row="1" Grid.Column="0" Text="R outer" VerticalAlignment="Center"/>
+			<NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding ROuter}"/>
+			<TextBlock Grid.Row="2" Grid.Column="0" Text="Z lower" VerticalAlignment="Center"/>
+			<NumericUpDown Grid.Row="2" Grid.Column="1" Value="{Binding ZLower}"/>
+			<TextBlock Grid.Row="3" Grid.Column="0" Text="Z upper" VerticalAlignment="Center"/>
+			<NumericUpDown Grid.Row="3" Grid.Column="1" Value="{Binding ZUpper}"/>
+		</Grid>
+	</StackPanel>
+</UserControl>
