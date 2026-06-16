@@ -11,6 +11,7 @@
   
     <Application.Styles>
         <FluentTheme />
+        <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml"/>
 
         <!-- Numeric fields are plain decimal entries: hide the up/down spinner buttons and
              disable spin so values are only changed by typing a valid number. NumericUpDown

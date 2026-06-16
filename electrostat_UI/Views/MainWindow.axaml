@@ -169,91 +169,153 @@
                     </Grid>
                 </TabItem>
                 <TabItem Header="Streamline Stress">
-                    <Grid RowDefinitions="Auto,Auto,*">
+                    <Grid RowDefinitions="Auto,*">
                         <TextBlock Grid.Row="0" Margin="6,4"
                                    Text="Per-streamline cumulative-method stress summary (worst margin first). E_avg/E_design are the governing cumulative average stress and distance-dependent withstand. Fields in kV/mm, lengths in mm."
                                    TextWrapping="Wrap"/>
-                        <!-- Header row. Column widths must match the row template below. -->
-                        <Border Grid.Row="1" BorderBrush="Gray" BorderThickness="0,0,0,1"
-                                Background="{DynamicResource SystemControlBackgroundListLowBrush}">
-                            <Grid Margin="6,2"
-                                  ColumnDefinitions="50,*,*,90,*,*,*,60,110,*">
-                                <TextBlock Grid.Column="0" Text="#" FontWeight="SemiBold"/>
-                                <TextBlock Grid.Column="1" Text="E_avg" FontWeight="SemiBold" HorizontalAlignment="Right"/>
-                                <TextBlock Grid.Column="2" Text="E_design" FontWeight="SemiBold" HorizontalAlignment="Right"/>
-                                <TextBlock Grid.Column="3" Text="Margin" FontWeight="SemiBold" HorizontalAlignment="Right"/>
-                                <TextBlock Grid.Column="4" Text="Max |E|" FontWeight="SemiBold" HorizontalAlignment="Right"/>
-                                <TextBlock Grid.Column="5" Text="Drop (kV)" FontWeight="SemiBold" HorizontalAlignment="Right"/>
-                                <TextBlock Grid.Column="6" Text="Length" FontWeight="SemiBold" HorizontalAlignment="Right"/>
-                                <TextBlock Grid.Column="7" Text="Segs" FontWeight="SemiBold" HorizontalAlignment="Right"/>
-                                <TextBlock Grid.Column="8" Text="Peak (x,y)" FontWeight="SemiBold" HorizontalAlignment="Right"/>
-                                <TextBlock Grid.Column="9" Text="Termination" FontWeight="SemiBold" Margin="8,0,0,0"/>
-                            </Grid>
-                        </Border>
 
-                        <ScrollViewer Grid.Row="2">
-                            <ItemsControl ItemsSource="{Binding StreamlineSummary}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="vm:StreamlineSummaryRow">
-                                        <Border BorderBrush="LightGray" BorderThickness="0,0,0,1">
-                                            <Grid Margin="6,2"
-                                                  ColumnDefinitions="50,*,*,90,*,*,*,60,110,*">
-                                                <TextBlock Grid.Column="0" Text="{Binding Name}"/>
-                                                <TextBlock Grid.Column="1" Text="{Binding PeakField, StringFormat='{}{0:N1}'}" HorizontalAlignment="Right"/>
-                                                <TextBlock Grid.Column="2" Text="{Binding AllowableField, StringFormat='{}{0:N1}'}" HorizontalAlignment="Right"/>
-                                                <TextBlock Grid.Column="3" Text="{Binding MarginText}" HorizontalAlignment="Right"/>
-                                                <TextBlock Grid.Column="4" Text="{Binding MaxField, StringFormat='{}{0:N1}'}" HorizontalAlignment="Right"/>
-                                                <TextBlock Grid.Column="5" Text="{Binding TotalDrop, StringFormat='{}{0:N1}'}" HorizontalAlignment="Right"/>
-                                                <TextBlock Grid.Column="6" Text="{Binding Length, StringFormat='{}{0:N1}'}" HorizontalAlignment="Right"/>
-                                                <TextBlock Grid.Column="7" Text="{Binding SegmentCount}" HorizontalAlignment="Right"/>
-                                                <TextBlock Grid.Column="8" Text="{Binding PeakLocation}" HorizontalAlignment="Right"/>
-                                                <TextBlock Grid.Column="9" Text="{Binding Termination}" Margin="8,0,0,0"/>
-                                            </Grid>
-                                        </Border>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </ScrollViewer>
+                        <DataGrid Grid.Row="1"
+                                  ItemsSource="{Binding StreamlineSummary}"
+                                  AutoGenerateColumns="False"
+                                  IsReadOnly="True"
+                                  CanUserSortColumns="False"
+                                  GridLinesVisibility="Horizontal"
+                                  HeadersVisibility="Column">
+                            <DataGrid.Columns>
+                                <DataGridTemplateColumn Header="#" Width="50">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate x:DataType="vm:StreamlineSummaryRow">
+                                            <TextBlock Text="{Binding Name}" Margin="6,2" VerticalAlignment="Center"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Header="E_avg" Width="*">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate x:DataType="vm:StreamlineSummaryRow">
+                                            <TextBlock Text="{Binding PeakField, StringFormat='{}{0:N1}'}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Header="E_design" Width="*">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate x:DataType="vm:StreamlineSummaryRow">
+                                            <TextBlock Text="{Binding AllowableField, StringFormat='{}{0:N1}'}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Header="Margin" Width="90">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate x:DataType="vm:StreamlineSummaryRow">
+                                            <TextBlock Text="{Binding MarginText}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Header="Max |E|" Width="*">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate x:DataType="vm:StreamlineSummaryRow">
+                                            <TextBlock Text="{Binding MaxField, StringFormat='{}{0:N1}'}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Header="Drop (kV)" Width="*">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate x:DataType="vm:StreamlineSummaryRow">
+                                            <TextBlock Text="{Binding TotalDrop, StringFormat='{}{0:N1}'}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Header="Length" Width="*">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate x:DataType="vm:StreamlineSummaryRow">
+                                            <TextBlock Text="{Binding Length, StringFormat='{}{0:N1}'}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Header="Segs" Width="60">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate x:DataType="vm:StreamlineSummaryRow">
+                                            <TextBlock Text="{Binding SegmentCount}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Header="Peak (x,y)" Width="110">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate x:DataType="vm:StreamlineSummaryRow">
+                                            <TextBlock Text="{Binding PeakLocation}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Header="Termination" Width="*">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate x:DataType="vm:StreamlineSummaryRow">
+                                            <TextBlock Text="{Binding Termination}" Margin="6,2" VerticalAlignment="Center"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
                     </Grid>
                 </TabItem>
                 <TabItem Header="Scenario Envelope">
-                    <Grid RowDefinitions="Auto,Auto,*">
+                    <Grid RowDefinitions="Auto,*">
                         <TextBlock Grid.Row="0" Margin="6,4"
                                    Text="Worst-case envelope across all solved voltage permutations. The governing (lowest-margin) scenario is highlighted. Select a scenario above to view its field plot and per-streamline stress."
                                    TextWrapping="Wrap"/>
 
-                        <Border Grid.Row="1" BorderBrush="Gray" BorderThickness="0,0,0,1"
-                                Background="{DynamicResource SystemControlBackgroundListLowBrush}">
-                            <Grid Margin="6,2" ColumnDefinitions="*,90,*,70,*,70">
-                                <TextBlock Grid.Column="0" Text="Scenario" FontWeight="SemiBold"/>
-                                <TextBlock Grid.Column="1" Text="Margin" FontWeight="SemiBold" HorizontalAlignment="Right"/>
-                                <TextBlock Grid.Column="2" Text="Max |E|" FontWeight="SemiBold" HorizontalAlignment="Right"/>
-                                <TextBlock Grid.Column="3" Text="Lines" FontWeight="SemiBold" HorizontalAlignment="Right"/>
-                                <TextBlock Grid.Column="4" Text="Governing line" FontWeight="SemiBold" HorizontalAlignment="Right"/>
-                                <TextBlock Grid.Column="5" Text="Worst?" FontWeight="SemiBold" HorizontalAlignment="Right"/>
-                            </Grid>
-                        </Border>
-
-                        <ScrollViewer Grid.Row="2">
-                            <ItemsControl ItemsSource="{Binding ScenarioResults}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="vm:ScenarioResult">
-                                        <Border BorderBrush="LightGray" BorderThickness="0,0,0,1">
-                                            <Grid Margin="6,2" ColumnDefinitions="*,90,*,70,*,70">
-                                                <TextBlock Grid.Column="0" Text="{Binding DisplayName}"
-                                                           FontWeight="{Binding IsGoverning, Converter={x:Static vm:BoolToWeightConverter.Instance}}"/>
-                                                <TextBlock Grid.Column="1" Text="{Binding MarginText}" HorizontalAlignment="Right"/>
-                                                <TextBlock Grid.Column="2" Text="{Binding MaxField, StringFormat='{}{0:N1}'}" HorizontalAlignment="Right"/>
-                                                <TextBlock Grid.Column="3" Text="{Binding StreamlineCount}" HorizontalAlignment="Right"/>
-                                                <TextBlock Grid.Column="4" Text="{Binding GoverningLocation}" HorizontalAlignment="Right"/>
-                                                <TextBlock Grid.Column="5" HorizontalAlignment="Right"
-                                                           Text="{Binding IsGoverning, Converter={x:Static vm:BoolToWorstConverter.Instance}}"/>
-                                            </Grid>
-                                        </Border>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </ScrollViewer>
+                        <DataGrid Grid.Row="1"
+                                  ItemsSource="{Binding ScenarioResults}"
+                                  AutoGenerateColumns="False"
+                                  IsReadOnly="True"
+                                  CanUserSortColumns="False"
+                                  GridLinesVisibility="Horizontal"
+                                  HeadersVisibility="Column">
+                            <DataGrid.Columns>
+                                <DataGridTemplateColumn Header="Scenario" Width="*">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate x:DataType="vm:ScenarioResult">
+                                            <TextBlock Text="{Binding DisplayName}" Margin="6,2" VerticalAlignment="Center"
+                                                       FontWeight="{Binding IsGoverning, Converter={x:Static vm:BoolToWeightConverter.Instance}}"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Header="Margin" Width="90">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate x:DataType="vm:ScenarioResult">
+                                            <TextBlock Text="{Binding MarginText}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Header="Max |E|" Width="*">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate x:DataType="vm:ScenarioResult">
+                                            <TextBlock Text="{Binding MaxField, StringFormat='{}{0:N1}'}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Header="Lines" Width="70">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate x:DataType="vm:ScenarioResult">
+                                            <TextBlock Text="{Binding StreamlineCount}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Header="Governing line" Width="*">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate x:DataType="vm:ScenarioResult">
+                                            <TextBlock Text="{Binding GoverningLocation}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Header="Worst?" Width="70">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate x:DataType="vm:ScenarioResult">
+                                            <TextBlock Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                       Text="{Binding IsGoverning, Converter={x:Static vm:BoolToWorstConverter.Instance}}"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
                     </Grid>
                 </TabItem>
             </TabControl>
