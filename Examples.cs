@@ -3,8 +3,26 @@ using System.Collections.Generic;
 namespace electrostat
 {
     /// <summary>
+    /// A named voltage permutation: overrides the voltage of one or more windings for a
+    /// single solved scenario (e.g. an impulse applied at a particular terminal). Only
+    /// winding voltages are specified here; wall and dielectric voltages always come from
+    /// the case's base <see cref="ElectrostatCase.Voltages"/> map. Static rings nested
+    /// beneath a winding (see <see cref="StaticRing.ParentWinding"/>) inherit that
+    /// winding's scenario voltage automatically.
+    /// </summary>
+    /// <param name="Name">Display name of the scenario (e.g. "HV impulse").</param>
+    /// <param name="WindingVoltages">Map of winding name to its voltage for this scenario.</param>
+    public sealed record VoltageScenario(
+        string Name,
+        IReadOnlyDictionary<string, double> WindingVoltages);
+
+    /// <summary>
     /// A single example case: a name plus the geometry inputs needed to build it.
     /// </summary>
+    /// <param name="Scenarios">
+    /// Optional list of voltage permutations to solve for this case. When null or empty
+    /// the case is solved once using <paramref name="Voltages"/> as-is.
+    /// </param>
     public sealed record ElectrostatCase(
         string Name,
         Domain Domain,
@@ -12,7 +30,41 @@ namespace electrostat
         IReadOnlyList<PressboardBarrier> Pressboards,
         IReadOnlyList<AngleRing> AngleRings,
         IReadOnlyList<StaticRing> StaticRings,
-        Dictionary<string, double> Voltages);
+        Dictionary<string, double> Voltages,
+        IReadOnlyList<VoltageScenario>? Scenarios = null)
+    {
+        /// <summary>
+        /// Resolve the full electrode voltage map for a given <paramref name="scenario"/>.
+        /// Starts from the base <see cref="Voltages"/>, overlays the scenario's per-winding
+        /// overrides (pass <c>null</c> to resolve the base / no-scenario case), then
+        /// propagates each winding's resulting voltage to any static ring nested beneath it
+        /// via <see cref="StaticRing.ParentWinding"/> (the ring's <c>"{Name}_Metal"</c>
+        /// entry).Voltages are taken from <see cref="Voltages"/>
+        /// unchanged.
+        /// </summary>
+        public Dictionary<string, double> EffectiveVoltages(VoltageScenario? scenario = null)
+        {
+            var v = new Dictionary<string, double>(Voltages);
+
+            if (scenario?.WindingVoltages != null)
+            {
+                foreach (var (winding, voltage) in scenario.WindingVoltages)
+                    v[winding] = voltage;
+            }
+
+            // Nested static rings inherit their parent winding's (possibly overridden)
+            // voltage. Unparented rings keep whatever "{Name}_Metal" entry the base map
+            // already holds.
+            foreach (var sr in StaticRings)
+            {
+                if (string.IsNullOrEmpty(sr.ParentWinding)) continue;
+                if (v.TryGetValue(sr.ParentWinding, out var parentV))
+                    v[sr.Name + "_Metal"] = parentV;
+            }
+
+            return v;
+        }
+    }
 
     /// <summary>
     /// Factory for the example cases originally exercised in <c>Program.Main</c>.
@@ -38,25 +90,39 @@ namespace electrostat
             voltages["TopYoke"] = 0.0;
             voltages["Tank"] = 0.0;
 
+            // Demo voltage permutations: each energizes a different terminal so dielectric
+            // stress can be evaluated for several impulse / service conditions in one solve.
+            // Only winding voltages are listed; nested static rings inherit their parent
+            // winding (HV rings follow "HV"), and walls stay at their base values.
+            var scenarios = new List<VoltageScenario>
+            {
+                new VoltageScenario("Switching Impulse",
+                    new Dictionary<string, double> { ["HV"] = 460.0e3/1.8, ["LV"] = 0.0, ["RV"] = 0.0 }),
+                new VoltageScenario("HV impulse",
+                    new Dictionary<string, double> { ["HV"] = 550.0e3/2.3, ["LV"] = 0.0, ["RV"] = 0.0 }),
+                new VoltageScenario("LV impulse",
+                    new Dictionary<string, double> { ["HV"] = 0.0, ["LV"] = 110.0e3/2.3, ["RV"] = 0.0 }),
+            };
+
             cases.Add(new ElectrostatCase(
                 "Window Cut (no adjacent phase)",
                 new Domain(RInner: 510.0 / 2, ROuter: 672.0, ZLower: 1000.0, ZUpper: topZ),
-                windings, pressboards, angleRings, staticRings, voltages));
+                windings, pressboards, angleRings, staticRings, voltages, scenarios));
 
             cases.Add(new ElectrostatCase(
                 "Tank Cut - LV",
                 new Domain(RInner: 510.0 / 2, ROuter: rHVOuter + 80.0, ZLower: 1000.0, ZUpper: topZ),
-                windings, pressboards, angleRings, staticRings, voltages));
+                windings, pressboards, angleRings, staticRings, voltages, scenarios));
 
             cases.Add(new ElectrostatCase(
                 "Tank Cut - PA",
                 new Domain(RInner: 510.0 / 2, ROuter: rHVOuter + 400.0, ZLower: 1000.0, ZUpper: topZ + 510.0),
-                windings, pressboards, angleRings, staticRings, voltages));
+                windings, pressboards, angleRings, staticRings, voltages, scenarios));
 
             cases.Add(new ElectrostatCase(
                 "Tank Cut - End",
                 new Domain(RInner: 510.0 / 2, ROuter: 672.0, ZLower: 1000.0, ZUpper: topZ + 510.0),
-                windings, pressboards, angleRings, staticRings, voltages));
+                windings, pressboards, angleRings, staticRings, voltages, scenarios));
 
             // With adjacent phase
             var (w2, p2, a2, s2) = WithAdjacentPhase(withLVCornerAngle);
@@ -119,9 +185,11 @@ namespace electrostat
             var staticRings = new List<StaticRing>
             {
                 new StaticRing("SR_TOP_HV_inner", R0: 884.0/2, ZBottom: 65.0+1238.0+6.0+3.0,
-                    Width: 45.0, Height: 12.0, RTL: 10.0, RTR: 2.0, RBR: 2.0, RBL: 2.0, TPaper: 3.0),
+                    Width: 45.0, Height: 12.0, RTL: 10.0, RTR: 2.0, RBR: 2.0, RBL: 2.0, TPaper: 3.0,
+                    ParentWinding: "HV"),
                 new StaticRing("SR_TOP_HV_outer", R0: 884.0/2+66.0, ZBottom: 65.0+1238.0+6.0+3.0,
-                    Width: 45.0, Height: 12.0, RTL: 2.0, RTR: 10.0, RBR: 2.0, RBL: 2.0, TPaper: 3.0)
+                    Width: 45.0, Height: 12.0, RTL: 2.0, RTR: 10.0, RBR: 2.0, RBL: 2.0, TPaper: 3.0,
+                    ParentWinding: "HV")
             };
 
             return (windings, pressboards, angleRings, staticRings);
@@ -177,7 +245,8 @@ namespace electrostat
                     RTL = sr.RTR,
                     RTR = sr.RTL,
                     RBL = sr.RBR,
-                    RBR = sr.RBL
+                    RBR = sr.RBL,
+                    ParentWinding = string.IsNullOrEmpty(sr.ParentWinding) ? null : sr.ParentWinding + "_2"
                 });
             }
 

@@ -10,7 +10,7 @@
 		<TextBlock Text="Pressboard" FontWeight="SemiBold"/>
 		<Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="2" ColumnSpacing="6">
 			<TextBlock Grid.Row="0" Grid.Column="0" Text="Name" VerticalAlignment="Center"/>
-			<TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Name}"/>
+			<TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Name, UpdateSourceTrigger=LostFocus}"/>
 			<TextBlock Grid.Row="1" Grid.Column="0" Text="R0" VerticalAlignment="Center"/>
 			<NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding R0}"/>
 			<TextBlock Grid.Row="2" Grid.Column="0" Text="Z bottom" VerticalAlignment="Center"/>

@@ -18,13 +18,12 @@ namespace electrostat
                     string caseName = SafeName(ex.Name);
                     if (!withLVCornerAngle) caseName += "/noLVcorner";
 
-                    GeometryBuilder.ResetGeometry();
-                    GeometryBuilder.BuildModel(
+                    var model = GeometryBuilder.BuildModel(
                         ex,
                         lc: 5.0,
                         mshOut: $"{caseName}/geom.msh",
                         clipToDomain: true);
-                    GeometryBuilder.RunGetDPAnalysis();
+                    model.Solve();
                     return;
                 }
             }

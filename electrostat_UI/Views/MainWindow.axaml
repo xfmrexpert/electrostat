@@ -33,6 +33,29 @@
         <DataTemplate DataType="cvm:StaticRingViewModel">
             <cviews:StaticRingEditorView/>
         </DataTemplate>
+        <DataTemplate DataType="vm:VoltageScenarioViewModel">
+            <StackPanel Spacing="4">
+                <TextBlock Text="Voltage Scenario" FontWeight="SemiBold"/>
+                <Grid ColumnDefinitions="Auto,*" RowSpacing="2" ColumnSpacing="6">
+                    <TextBlock Grid.Column="0" Text="Name" VerticalAlignment="Center"/>
+                    <TextBox Grid.Column="1" Text="{Binding Name, UpdateSourceTrigger=LostFocus}"/>
+                </Grid>
+                <TextBlock Text="Winding voltages (V)" FontWeight="SemiBold" Margin="0,6,0,0"/>
+                <ItemsControl ItemsSource="{Binding Cells}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ScenarioVoltageCell">
+                            <Grid ColumnDefinitions="Auto,*" RowSpacing="2" ColumnSpacing="6" Margin="0,1">
+                                <TextBlock Grid.Column="0" Text="{Binding WindingName}"
+                                           VerticalAlignment="Center" MinWidth="70"/>
+                                <NumericUpDown Grid.Column="1" Value="{Binding Voltage}"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock FontStyle="Italic" FontSize="11" Foreground="Gray" TextWrapping="Wrap"
+                           Text="Nested static rings inherit their parent winding's voltage."/>
+            </StackPanel>
+        </DataTemplate>
     </Window.DataTemplates>
 
     <Grid RowDefinitions="Auto,*,Auto" ColumnDefinitions="280,*">
@@ -61,6 +84,7 @@
                 <MenuItem Header="Add _Pressboard" Command="{Binding AddPressboardCommand}"/>
                 <MenuItem Header="Add _Angle Ring" Command="{Binding AddAngleRingCommand}"/>
                 <MenuItem Header="Add _Static Ring" Command="{Binding AddStaticRingCommand}"/>
+                <MenuItem Header="Add Sc_enario" Command="{Binding AddScenarioCommand}"/>
                 <Separator/>
                 <MenuItem Header="_Remove Selected" Command="{Binding RemoveSelectedCommand}"/>
             </MenuItem>
@@ -74,6 +98,12 @@
             <TreeView Grid.Row="1"
                       ItemsSource="{Binding CaseTree}"
                       SelectedItem="{Binding SelectedTreeNode, Mode=TwoWay}">
+                <TreeView.Styles>
+                    <!-- Bind each container's expansion to the node so it survives rebuilds. -->
+                    <Style Selector="TreeViewItem" x:DataType="vm:CaseTreeNode">
+                        <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+                    </Style>
+                </TreeView.Styles>
                 <TreeView.ItemTemplate>
                     <TreeDataTemplate ItemsSource="{Binding Children}"
                                       x:DataType="vm:CaseTreeNode">
@@ -107,6 +137,16 @@
                     <Grid RowDefinitions="Auto,*">
                         <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="12"
                                     Margin="6,4">
+                            <TextBlock Text="Scenario:" VerticalAlignment="Center"/>
+                            <ComboBox ItemsSource="{Binding ScenarioResults}"
+                                      SelectedItem="{Binding SelectedScenarioResult, Mode=TwoWay}"
+                                      MinWidth="160">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:ScenarioResult">
+                                        <TextBlock Text="{Binding DisplayName}"/>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
                             <TextBlock Text="Field:" VerticalAlignment="Center"/>
                             <ComboBox ItemsSource="{Binding AvailableFields}"
                                       SelectedItem="{Binding SelectedField, Mode=TwoWay}"
@@ -133,7 +173,6 @@
                         <TextBlock Grid.Row="0" Margin="6,4"
                                    Text="Per-streamline cumulative-method stress summary (worst margin first). E_avg/E_design are the governing cumulative average stress and distance-dependent withstand. Fields in kV/mm, lengths in mm."
                                    TextWrapping="Wrap"/>
-
                         <!-- Header row. Column widths must match the row template below. -->
                         <Border Grid.Row="1" BorderBrush="Gray" BorderThickness="0,0,0,1"
                                 Background="{DynamicResource SystemControlBackgroundListLowBrush}">
@@ -169,6 +208,46 @@
                                                 <TextBlock Grid.Column="7" Text="{Binding SegmentCount}" HorizontalAlignment="Right"/>
                                                 <TextBlock Grid.Column="8" Text="{Binding PeakLocation}" HorizontalAlignment="Right"/>
                                                 <TextBlock Grid.Column="9" Text="{Binding Termination}" Margin="8,0,0,0"/>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Grid>
+                </TabItem>
+                <TabItem Header="Scenario Envelope">
+                    <Grid RowDefinitions="Auto,Auto,*">
+                        <TextBlock Grid.Row="0" Margin="6,4"
+                                   Text="Worst-case envelope across all solved voltage permutations. The governing (lowest-margin) scenario is highlighted. Select a scenario above to view its field plot and per-streamline stress."
+                                   TextWrapping="Wrap"/>
+
+                        <Border Grid.Row="1" BorderBrush="Gray" BorderThickness="0,0,0,1"
+                                Background="{DynamicResource SystemControlBackgroundListLowBrush}">
+                            <Grid Margin="6,2" ColumnDefinitions="*,90,*,70,*,70">
+                                <TextBlock Grid.Column="0" Text="Scenario" FontWeight="SemiBold"/>
+                                <TextBlock Grid.Column="1" Text="Margin" FontWeight="SemiBold" HorizontalAlignment="Right"/>
+                                <TextBlock Grid.Column="2" Text="Max |E|" FontWeight="SemiBold" HorizontalAlignment="Right"/>
+                                <TextBlock Grid.Column="3" Text="Lines" FontWeight="SemiBold" HorizontalAlignment="Right"/>
+                                <TextBlock Grid.Column="4" Text="Governing line" FontWeight="SemiBold" HorizontalAlignment="Right"/>
+                                <TextBlock Grid.Column="5" Text="Worst?" FontWeight="SemiBold" HorizontalAlignment="Right"/>
+                            </Grid>
+                        </Border>
+
+                        <ScrollViewer Grid.Row="2">
+                            <ItemsControl ItemsSource="{Binding ScenarioResults}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:ScenarioResult">
+                                        <Border BorderBrush="LightGray" BorderThickness="0,0,0,1">
+                                            <Grid Margin="6,2" ColumnDefinitions="*,90,*,70,*,70">
+                                                <TextBlock Grid.Column="0" Text="{Binding DisplayName}"
+                                                           FontWeight="{Binding IsGoverning, Converter={x:Static vm:BoolToWeightConverter.Instance}}"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding MarginText}" HorizontalAlignment="Right"/>
+                                                <TextBlock Grid.Column="2" Text="{Binding MaxField, StringFormat='{}{0:N1}'}" HorizontalAlignment="Right"/>
+                                                <TextBlock Grid.Column="3" Text="{Binding StreamlineCount}" HorizontalAlignment="Right"/>
+                                                <TextBlock Grid.Column="4" Text="{Binding GoverningLocation}" HorizontalAlignment="Right"/>
+                                                <TextBlock Grid.Column="5" HorizontalAlignment="Right"
+                                                           Text="{Binding IsGoverning, Converter={x:Static vm:BoolToWorstConverter.Instance}}"/>
                                             </Grid>
                                         </Border>
                                     </DataTemplate>

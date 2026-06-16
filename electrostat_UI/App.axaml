@@ -11,5 +11,13 @@
   
     <Application.Styles>
         <FluentTheme />
+
+        <!-- Numeric fields are plain decimal entries: hide the up/down spinner buttons and
+             disable spin so values are only changed by typing a valid number. NumericUpDown
+             already rejects non-numeric input and reverts to the last valid value. -->
+        <Style Selector="NumericUpDown">
+            <Setter Property="ShowButtonSpinner" Value="False"/>
+            <Setter Property="AllowSpin" Value="False"/>
+        </Style>
     </Application.Styles>
 </Application>
