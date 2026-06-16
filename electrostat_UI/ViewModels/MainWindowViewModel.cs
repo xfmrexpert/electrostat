@@ -15,15 +15,22 @@ namespace electrostat_UI.ViewModels
 {
     public partial class MainWindowViewModel : ViewModelBase
     {
-        public ObservableCollection<ElectrostatCase> Examples { get; }
+        public ObservableCollection<Transformer> Examples { get; }
 
         public ObservableCollection<CaseTreeNode> CaseTree { get; } = new();
 
         [ObservableProperty]
-        private ElectrostatCase? _selectedExample;
+        private Transformer? _selectedTransformer;
 
         [ObservableProperty]
-        private ElectrostatCaseViewModel? _editingCase;
+        private TransformerViewModel? _editingTransformer;
+
+        /// <summary>
+        /// The cut whose geometry is previewed / solved. Driven by selecting a cut node in
+        /// the explorer; defaults to the transformer's first cut.
+        /// </summary>
+        [ObservableProperty]
+        private CutViewModel? _selectedCut;
 
         [ObservableProperty]
         private CaseTreeNode? _selectedTreeNode;
@@ -101,40 +108,53 @@ namespace electrostat_UI.ViewModels
 
         public MainWindowViewModel()
         {
-            Examples = new ObservableCollection<ElectrostatCase>(electrostat.Examples.All());
+            Examples = new ObservableCollection<Transformer>(electrostat.Examples.All());
 
             _rebuildTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(75) };
             _rebuildTimer.Tick += (_, _) => { _rebuildTimer.Stop(); RebuildGeometry(); };
 
             if (Examples.Count > 0)
             {
-                SelectedExample = Examples[0];
+                SelectedTransformer = Examples[0];
             }
         }
 
-        partial void OnSelectedExampleChanged(ElectrostatCase? value)
+        partial void OnSelectedTransformerChanged(Transformer? value)
         {
             CurrentSolution = null;
             Streamlines = null;
             ScenarioResults.Clear();
             SelectedScenarioResult = null;
-            SolveCommand.NotifyCanExecuteChanged();
 
-            if (EditingCase != null)
+            if (EditingTransformer != null)
             {
-                EditingCase.Changed -= OnCaseChanged;
-                EditingCase.StructureChanged -= OnCaseStructureChanged;
+                EditingTransformer.Changed -= OnCaseChanged;
+                EditingTransformer.StructureChanged -= OnCaseStructureChanged;
             }
 
-            EditingCase = value != null ? new ElectrostatCaseViewModel(value) : null;
+            EditingTransformer = value != null ? new TransformerViewModel(value) : null;
 
-            if (EditingCase != null)
+            if (EditingTransformer != null)
             {
-                EditingCase.Changed += OnCaseChanged;
-                EditingCase.StructureChanged += OnCaseStructureChanged;
+                EditingTransformer.Changed += OnCaseChanged;
+                EditingTransformer.StructureChanged += OnCaseStructureChanged;
             }
+
+            // Default the active cut to the transformer's first cut so the preview / solve
+            // commands have a target as soon as a transformer is selected.
+            SelectedCut = EditingTransformer?.Cuts.FirstOrDefault();
+            SolveCutCommand.NotifyCanExecuteChanged();
+            SolveAllCutsCommand.NotifyCanExecuteChanged();
 
             RebuildCaseTree();
+            RebuildGeometry();
+        }
+
+        partial void OnSelectedCutChanged(CutViewModel? value)
+        {
+            // Switching the active cut changes the domain / geometry type previewed, so
+            // rebuild the geometry and refresh the solve commands' availability.
+            SolveCutCommand.NotifyCanExecuteChanged();
             RebuildGeometry();
         }
 
@@ -188,6 +208,20 @@ namespace electrostat_UI.ViewModels
                 return;
 
             SelectedComponent = value?.Model;
+
+            // Selecting a cut (or its domain) makes that cut the active one for preview /
+            // single-cut solve.
+            switch (value?.Model)
+            {
+                case CutViewModel cut:
+                    SelectedCut = cut;
+                    break;
+                case Components.DomainViewModel dom
+                    when EditingTransformer?.Cuts.FirstOrDefault(c => ReferenceEquals(c.Domain, dom)) is { } owner:
+                    SelectedCut = owner;
+                    break;
+            }
+
             UpdateHighlight();
         }
 
@@ -225,21 +259,31 @@ namespace electrostat_UI.ViewModels
 
         private void RebuildGeometry()
         {
-            var ec = EditingCase;
-            if (ec == null)
+            var tx = EditingTransformer;
+            if (tx == null)
             {
                 CurrentGeometry = null;
                 HighlightedSurfaces = null;
-                StatusMessage = "No case loaded.";
+                StatusMessage = "No transformer loaded.";
+                return;
+            }
+
+            // Preview the active cut (fall back to the first cut if none is selected yet).
+            var cut = SelectedCut ?? tx.Cuts.FirstOrDefault();
+            if (cut == null)
+            {
+                CurrentGeometry = null;
+                HighlightedSurfaces = null;
+                StatusMessage = $"{tx.Name}: no cuts defined.";
                 return;
             }
 
             try
             {
-                var model = ec.ToModel();
+                var model = tx.ResolveCut(cut);
                 _activeModel = GeometryBuilder.BuildGeometryOnly(model, clipToDomain: true);
                 CurrentGeometry = _activeModel.Geometry;
-                StatusMessage = $"{model.Name}: {CurrentGeometry.Surfaces.Count} surfaces";
+                StatusMessage = $"{tx.Name} / {cut.Name} ({cut.GeometryType}): {CurrentGeometry.Surfaces.Count} surfaces";
                 UpdateHighlight();
             }
             catch (Exception ex)
@@ -247,15 +291,15 @@ namespace electrostat_UI.ViewModels
                 _activeModel = null;
                 CurrentGeometry = null;
                 HighlightedSurfaces = null;
-                StatusMessage = $"Failed to build {ec.Name}: {ex.Message}";
+                StatusMessage = $"Failed to build {cut.Name}: {ex.Message}";
             }
         }
 
         [RelayCommand]
-        private void SelectExample(ElectrostatCase? example)
+        private void SelectTransformer(Transformer? transformer)
         {
-            if (example != null)
-                SelectedExample = example;
+            if (transformer != null)
+                SelectedTransformer = transformer;
         }
 
         // ---- Add / Remove component commands ----
@@ -263,10 +307,10 @@ namespace electrostat_UI.ViewModels
         [RelayCommand]
         private void AddWinding()
         {
-            if (EditingCase == null) return;
-            EditingCase.Windings.Add(new WindingViewModel
+            if (EditingTransformer == null) return;
+            EditingTransformer.Windings.Add(new WindingViewModel
             {
-                Name = UniqueName("Winding", EditingCase.Windings.Select(x => x.Name)),
+                Name = UniqueName("Winding", EditingTransformer.Windings.Select(x => x.Name)),
                 R0 = 100, ZBottom = 0, Width = 50, Height = 200, FilletR = 1
             });
         }
@@ -274,10 +318,10 @@ namespace electrostat_UI.ViewModels
         [RelayCommand]
         private void AddPressboard()
         {
-            if (EditingCase == null) return;
-            EditingCase.Pressboards.Add(new PressboardViewModel
+            if (EditingTransformer == null) return;
+            EditingTransformer.Pressboards.Add(new PressboardViewModel
             {
-                Name = UniqueName("PB", EditingCase.Pressboards.Select(x => x.Name)),
+                Name = UniqueName("PB", EditingTransformer.Pressboards.Select(x => x.Name)),
                 R0 = 100, ZBottom = 0, Thickness = 3, Height = 200
             });
         }
@@ -285,10 +329,10 @@ namespace electrostat_UI.ViewModels
         [RelayCommand]
         private void AddAngleRing()
         {
-            if (EditingCase == null) return;
-            EditingCase.AngleRings.Add(new AngleRingViewModel
+            if (EditingTransformer == null) return;
+            EditingTransformer.AngleRings.Add(new AngleRingViewModel
             {
-                Name = UniqueName("AR", EditingCase.AngleRings.Select(x => x.Name)),
+                Name = UniqueName("AR", EditingTransformer.AngleRings.Select(x => x.Name)),
                 R0 = 100, ZCorner = 0, Tv = 3, Hv = 50, Th = 3, Wh = 50, InsideFilletR = 5
             });
         }
@@ -296,10 +340,10 @@ namespace electrostat_UI.ViewModels
         [RelayCommand]
         private void AddStaticRing()
         {
-            if (EditingCase == null) return;
-            EditingCase.StaticRings.Add(new StaticRingViewModel
+            if (EditingTransformer == null) return;
+            EditingTransformer.StaticRings.Add(new StaticRingViewModel
             {
-                Name = UniqueName("SR", EditingCase.StaticRings.Select(x => x.Name)),
+                Name = UniqueName("SR", EditingTransformer.StaticRings.Select(x => x.Name)),
                 R0 = 100, ZBottom = 0, Width = 30, Height = 12, TPaper = 2
             });
         }
@@ -307,27 +351,53 @@ namespace electrostat_UI.ViewModels
         [RelayCommand]
         private void AddScenario()
         {
-            if (EditingCase == null) return;
+            if (EditingTransformer == null) return;
             // New scenario seeds each winding's voltage from its current per-winding value
             // so it starts as a copy of present conditions, ready to edit.
             var sc = new VoltageScenarioViewModel(
-                UniqueName("Scenario", EditingCase.Scenarios.Select(x => x.Name)));
-            foreach (var wdg in EditingCase.Windings)
+                UniqueName("Scenario", EditingTransformer.Scenarios.Select(x => x.Name)));
+            foreach (var wdg in EditingTransformer.Windings)
                 sc.Cells.Add(new ScenarioVoltageCell(wdg.Name, wdg.Voltage));
-            EditingCase.Scenarios.Add(sc);
+            EditingTransformer.Scenarios.Add(sc);
+        }
+
+        [RelayCommand]
+        private void AddCut()
+        {
+            if (EditingTransformer == null) return;
+            // Seed a new cut from the currently selected cut's domain (or a sensible default),
+            // so it starts as an editable copy near the existing geometry.
+            var template = SelectedCut ?? EditingTransformer.Cuts.FirstOrDefault();
+            var domain = template != null
+                ? new Domain(template.Domain.RInner, template.Domain.ROuter,
+                             template.Domain.ZLower, template.Domain.ZUpper)
+                : new Domain(RInner: 100, ROuter: 500, ZLower: 0, ZUpper: 1500);
+
+            var cut = new CutViewModel(new Cut(
+                UniqueName("Cut", EditingTransformer.Cuts.Select(x => x.Name)),
+                domain,
+                template?.GeometryType ?? TfmrLib.FEM.GeometryType.Axisymmetric,
+                template?.IncludeAdjacentPhase ?? false));
+            EditingTransformer.Cuts.Add(cut);
+            SelectedCut = cut;
         }
 
         [RelayCommand]
         private void RemoveSelected()
         {
-            if (EditingCase == null) return;
+            if (EditingTransformer == null) return;
             switch (SelectedComponent)
             {
-                case WindingViewModel w: EditingCase.Windings.Remove(w); break;
-                case PressboardViewModel p: EditingCase.Pressboards.Remove(p); break;
-                case AngleRingViewModel a: EditingCase.AngleRings.Remove(a); break;
-                case StaticRingViewModel s: EditingCase.StaticRings.Remove(s); break;
-                case VoltageScenarioViewModel sc: EditingCase.Scenarios.Remove(sc); break;
+                case WindingViewModel w: EditingTransformer.Windings.Remove(w); break;
+                case PressboardViewModel p: EditingTransformer.Pressboards.Remove(p); break;
+                case AngleRingViewModel a: EditingTransformer.AngleRings.Remove(a); break;
+                case StaticRingViewModel s: EditingTransformer.StaticRings.Remove(s); break;
+                case VoltageScenarioViewModel sc: EditingTransformer.Scenarios.Remove(sc); break;
+                case CutViewModel cut:
+                    EditingTransformer.Cuts.Remove(cut);
+                    if (ReferenceEquals(SelectedCut, cut))
+                        SelectedCut = EditingTransformer.Cuts.FirstOrDefault();
+                    break;
             }
         }
 
@@ -353,46 +423,63 @@ namespace electrostat_UI.ViewModels
             try
             {
                 CaseTree.Clear();
-                var ec = EditingCase;
-                if (ec == null)
+                var tx = EditingTransformer;
+                if (tx == null)
                 {
                     _lastRootKey = null;
                     return;
                 }
 
-                var root = new CaseTreeNode(ec.Name, ec);
-
-                root.Children.Add(new CaseTreeNode("Domain", ec.Domain));
+                var root = new CaseTreeNode(tx.Name, tx);
 
                 // Nest each static ring under its parent winding; rings without a parent stay
                 // in the top-level "Static Rings" group.
-                var w = new CaseTreeNode($"Windings ({ec.Windings.Count})", key: GroupWindings);
-                foreach (var x in ec.Windings)
+                var w = new CaseTreeNode($"Windings ({tx.Windings.Count})", key: GroupWindings);
+                foreach (var x in tx.Windings)
                 {
                     var wNode = new CaseTreeNode(x.Name, x);
-                    foreach (var sr in ec.StaticRings)
+                    foreach (var sr in tx.StaticRings)
                         if (sr.IsVoltageInherited && sr.ParentWinding == x.Name)
                             wNode.Children.Add(new CaseTreeNode($"{sr.Name} (ring)", sr));
                     w.Children.Add(wNode);
                 }
                 root.Children.Add(w);
 
-                var p = new CaseTreeNode($"Pressboards ({ec.Pressboards.Count})", key: GroupPressboards);
-                foreach (var x in ec.Pressboards) p.Children.Add(new CaseTreeNode(x.Name, x));
+                var p = new CaseTreeNode($"Pressboards ({tx.Pressboards.Count})", key: GroupPressboards);
+                foreach (var x in tx.Pressboards) p.Children.Add(new CaseTreeNode(x.Name, x));
                 root.Children.Add(p);
 
-                var a = new CaseTreeNode($"Angle Rings ({ec.AngleRings.Count})", key: GroupAngleRings);
-                foreach (var x in ec.AngleRings) a.Children.Add(new CaseTreeNode(x.Name, x));
+                var a = new CaseTreeNode($"Angle Rings ({tx.AngleRings.Count})", key: GroupAngleRings);
+                foreach (var x in tx.AngleRings) a.Children.Add(new CaseTreeNode(x.Name, x));
                 root.Children.Add(a);
 
-                var unparented = ec.StaticRings.Where(sr => !sr.IsVoltageInherited).ToList();
+                var unparented = tx.StaticRings.Where(sr => !sr.IsVoltageInherited).ToList();
                 var s = new CaseTreeNode($"Static Rings ({unparented.Count})", key: GroupStaticRings);
                 foreach (var x in unparented) s.Children.Add(new CaseTreeNode(x.Name, x));
                 root.Children.Add(s);
 
-                var sc = new CaseTreeNode($"Scenarios ({ec.Scenarios.Count})", key: GroupScenarios);
-                foreach (var x in ec.Scenarios) sc.Children.Add(new CaseTreeNode(x.Name, x));
+                // Interphase insulation: shown only when present; mirrored automatically for
+                // adjacent-phase cuts. Groups both interphase barriers and angle rings.
+                int interphaseCount = tx.InterphaseBarriers.Count + tx.InterphaseAngleRings.Count;
+                var ip = new CaseTreeNode($"Interphase ({interphaseCount})", key: GroupInterphase);
+                foreach (var x in tx.InterphaseBarriers) ip.Children.Add(new CaseTreeNode(x.Name, x));
+                foreach (var x in tx.InterphaseAngleRings) ip.Children.Add(new CaseTreeNode(x.Name, x));
+                root.Children.Add(ip);
+
+                var sc = new CaseTreeNode($"Scenarios ({tx.Scenarios.Count})", key: GroupScenarios);
+                foreach (var x in tx.Scenarios) sc.Children.Add(new CaseTreeNode(x.Name, x));
                 root.Children.Add(sc);
+
+                // Cuts: each cut owns its own domain bounds, geometry type and phase mode, so
+                // its domain is nested directly beneath it.
+                var cutsGroup = new CaseTreeNode($"Cuts ({tx.Cuts.Count})", key: GroupCuts);
+                foreach (var cut in tx.Cuts)
+                {
+                    var cutNode = new CaseTreeNode(cut.Name, cut);
+                    cutNode.Children.Add(new CaseTreeNode("Domain", cut.Domain));
+                    cutsGroup.Children.Add(cutNode);
+                }
+                root.Children.Add(cutsGroup);
 
                 CaseTree.Add(root);
                 _lastRootKey = root.Key;
@@ -425,7 +512,9 @@ namespace electrostat_UI.ViewModels
         private const string GroupPressboards = "group:pressboards";
         private const string GroupAngleRings = "group:anglerings";
         private const string GroupStaticRings = "group:staticrings";
+        private const string GroupInterphase = "group:interphase";
         private const string GroupScenarios = "group:scenarios";
+        private const string GroupCuts = "group:cuts";
 
         private static void CollectExpandedKeys(IEnumerable<CaseTreeNode> nodes, HashSet<object> into)
         {
@@ -470,18 +559,93 @@ namespace electrostat_UI.ViewModels
             return false;
         }
 
-        private bool CanSolve() => EditingCase != null && !IsSolving;
+        private bool CanSolveCut() =>
+            EditingTransformer != null && SelectedCut != null && !IsSolving;
 
-        [RelayCommand(CanExecute = nameof(CanSolve))]
-        private async Task SolveAsync()
+        private bool CanSolveAllCuts() =>
+            EditingTransformer != null && EditingTransformer.Cuts.Count > 0 && !IsSolving;
+
+        /// <summary>
+        /// Solve the currently selected cut on its own, replacing the results view with that
+        /// cut's scenarios.
+        /// </summary>
+        [RelayCommand(CanExecute = nameof(CanSolveCut))]
+        private async Task SolveCutAsync()
         {
-            var ec = EditingCase;
-            if (ec == null) return;
+            var tx = EditingTransformer;
+            var cut = SelectedCut;
+            if (tx == null || cut == null) return;
 
             IsSolving = true;
-            SolveCommand.NotifyCanExecuteChanged();
-            var ex = ec.ToModel();
+            SolveCutCommand.NotifyCanExecuteChanged();
+            SolveAllCutsCommand.NotifyCanExecuteChanged();
+            try
+            {
+                var results = await SolveCaseAsync(tx.ResolveCut(cut), cut.Name, prefixScenarioName: false);
+                PublishResults(results, cut.Name);
+            }
+            catch (Exception exc)
+            {
+                CurrentSolution = null;
+                StatusMessage = $"Solve failed: {exc.Message}";
+            }
+            finally
+            {
+                IsSolving = false;
+                SolveCutCommand.NotifyCanExecuteChanged();
+                SolveAllCutsCommand.NotifyCanExecuteChanged();
+            }
+        }
 
+        /// <summary>
+        /// Solve every cut of the current transformer in turn, aggregating all cuts'
+        /// scenarios into one results view (scenario names are prefixed with the cut name).
+        /// </summary>
+        [RelayCommand(CanExecute = nameof(CanSolveAllCuts))]
+        private async Task SolveAllCutsAsync()
+        {
+            var tx = EditingTransformer;
+            if (tx == null || tx.Cuts.Count == 0) return;
+
+            IsSolving = true;
+            SolveCutCommand.NotifyCanExecuteChanged();
+            SolveAllCutsCommand.NotifyCanExecuteChanged();
+            try
+            {
+                var cuts = tx.Cuts.ToList();
+                var all = new List<ScenarioResult>();
+                for (int i = 0; i < cuts.Count; i++)
+                {
+                    var cut = cuts[i];
+                    StatusMessage = $"Solving cut {i + 1}/{cuts.Count}: {cut.Name}...";
+                    var results = await SolveCaseAsync(tx.ResolveCut(cut), cut.Name, prefixScenarioName: true);
+                    all.AddRange(results);
+                }
+                PublishResults(all, $"{tx.Name} ({cuts.Count} cuts)");
+            }
+            catch (Exception exc)
+            {
+                CurrentSolution = null;
+                StatusMessage = $"Solve failed: {exc.Message}";
+            }
+            finally
+            {
+                IsSolving = false;
+                SolveCutCommand.NotifyCanExecuteChanged();
+                SolveAllCutsCommand.NotifyCanExecuteChanged();
+            }
+        }
+
+        /// <summary>
+        /// Build the mesh for <paramref name="ex"/> once, solve every scenario against it,
+        /// and return one <see cref="ScenarioResult"/> per scenario. Does not touch the
+        /// results view; callers aggregate / publish. When <paramref name="prefixScenarioName"/>
+        /// is true each scenario name is prefixed with <paramref name="label"/> so results
+        /// from multiple cuts stay distinguishable in one aggregated list.
+        /// </summary>
+        private async Task<List<ScenarioResult>> SolveCaseAsync(
+            ElectrostatCase ex, string label, bool prefixScenarioName)
+        {
             // A case with no scenarios solves once from its base voltages (labelled "Base");
             // otherwise every scenario is evaluated. The geometry/mesh depends only on the
             // components (not the voltages), so it is built ONCE below and the solver
@@ -494,109 +658,104 @@ namespace electrostat_UI.ViewModels
             bool hasScenarios = scenarios.Count > 0;
             int total = hasScenarios ? scenarios.Count : 1;
 
-            try
+            var caseName = SafeName(label);
+
+            // Build geometry + mesh ONCE. The build also creates a voltage Scenario for
+            // every permutation (or a single "Base"), so the solver can evaluate them all
+            // against this one mesh. Seed the base effective voltages so a Dirichlet BC /
+            // terminal is created for every electrode and wall.
+            StatusMessage = $"Building mesh for {label}...";
+            var builtModel = await Task.Run(() => GeometryBuilder.BuildMesh(
+                ex with { Voltages = ex.EffectiveVoltages(null) },
+                caseName, lc: 5.0, clipToDomain: true));
+            _activeModel = builtModel;
+
+            // The electrode surfaces / Dirichlet walls and geometry are stable for the
+            // life of this mesh (no further rebuilds), so capture the geometry once and
+            // reuse it for every scenario's streamlines and result.
+            var geom = builtModel.Geometry;
+
+            // Solve once: the solver evaluates every scenario in the deck and writes one
+            // results file per scenario, which BuiltModel.Solve collects into
+            // ScenarioSolutions.
+            StatusMessage = hasScenarios
+                ? $"Solving {label}: {total} scenario(s)..."
+                : $"Solving {label}...";
+            await Task.Run(() => builtModel.Solve());
+
+            var results = new List<ScenarioResult>(builtModel.ScenarioSolutions.Count);
+            foreach (var scenarioSolution in builtModel.ScenarioSolutions)
             {
-                var caseName = SafeName(ex.Name);
+                string scenarioName = prefixScenarioName
+                    ? $"{label} / {scenarioSolution.Name}"
+                    : scenarioSolution.Name;
+                var sol = scenarioSolution.Solution;
 
-                // Build geometry + mesh ONCE. The build also creates a voltage Scenario for
-                // every permutation (or a single "Base"), so the solver can evaluate them all
-                // against this one mesh. Seed the base effective voltages so a Dirichlet BC /
-                // terminal is created for every electrode and wall.
-                StatusMessage = $"Building mesh for {ex.Name}...";
-                var builtModel = await Task.Run(() => GeometryBuilder.BuildMesh(
-                    ex with { Voltages = ex.EffectiveVoltages(null) },
-                    caseName, lc: 5.0, clipToDomain: true));
-                _activeModel = builtModel;
-
-                // The electrode surfaces / Dirichlet walls and geometry are stable for the
-                // life of this mesh (no further rebuilds), so capture the geometry once and
-                // reuse it for every scenario's streamlines and result.
-                var geom = builtModel.Geometry;
-
-                // Solve once: the solver evaluates every scenario in the deck and writes one
-                // results file per scenario, which BuiltModel.Solve collects into
-                // ScenarioSolutions.
-                StatusMessage = hasScenarios
-                    ? $"Solving {ex.Name}: {total} scenario(s)..."
-                    : $"Solving {ex.Name}...";
-                await Task.Run(() => builtModel.Solve());
-
-                var results = new List<ScenarioResult>(builtModel.ScenarioSolutions.Count);
-                foreach (var scenarioSolution in builtModel.ScenarioSolutions)
+                if (sol == null)
                 {
-                    string scenarioName = scenarioSolution.Name;
-                    var sol = scenarioSolution.Solution;
-
-                    if (sol == null)
+                    var reason = (builtModel.Problem as MFEMProblem)?.LastLoadError;
+                    results.Add(new ScenarioResult
                     {
-                        var reason = (builtModel.Problem as MFEMProblem)?.LastLoadError;
-                        results.Add(new ScenarioResult
-                        {
-                            Name = scenarioName,
-                            Geometry = geom,
-                            StatusDetail = reason ?? $"No results were produced for scenario '{scenarioName}'.",
-                        });
-                        continue;
-                    }
-
-                    // Trace streamlines for this scenario's solution. The electrode surfaces
-                    // / Dirichlet walls are shared by every scenario (same mesh), so only the
-                    // field (sol) differs between permutations.
-                    var streamlines = await Task.Run(() => BuildStreamlines(sol, geom, builtModel));
-                    results.Add(BuildScenarioResult(scenarioName, sol, geom, streamlines));
+                        Name = scenarioName,
+                        Geometry = geom,
+                        StatusDetail = reason ?? $"No results were produced for scenario '{scenarioName}'.",
+                    });
+                    continue;
                 }
 
-                // Flag the governing (overall worst-margin) scenario for the envelope view.
-                ScenarioResult? governing = null;
-                foreach (var r in results)
-                {
-                    r.IsGoverning = false;
-                    if (r.Solution == null) continue;
-                    if (governing == null || r.WorstMargin < governing.WorstMargin)
-                        governing = r;
-                }
-                if (governing != null) governing.IsGoverning = true;
-
-                ScenarioResults.Clear();
-                foreach (var r in results) ScenarioResults.Add(r);
-
-                // Show the governing scenario by default (worst case drives design review);
-                // fall back to the first scenario that produced a solution, else the first.
-                SelectedScenarioResult =
-                    governing
-                    ?? results.Find(r => r.Solution != null)
-                    ?? (results.Count > 0 ? results[0] : null);
-
-                int solved = results.FindAll(r => r.Solution != null).Count;
-                if (solved == 0)
-                {
-                    StatusMessage = $"Solve completed but no results were loaded for {ex.Name}. " +
-                                    (results.Count > 0 ? results[0].StatusDetail : null);
-                }
-                else if (hasScenarios)
-                {
-                    StatusMessage = $"Solved {ex.Name}: {solved}/{total} scenarios. " +
-                                    (governing != null
-                                        ? $"Governing: {governing.Name} (margin {governing.MarginText}, max |E| {governing.MaxField:N1} kV/mm)."
-                                        : "No constrained gaps found.");
-                }
-                else
-                {
-                    var only = SelectedScenarioResult;
-                    StatusMessage = $"Solved {ex.Name}. Nodal views: {only?.Solution?.NodalScalars.Count ?? 0}, " +
-                                    $"elements: {only?.Solution?.Mesh?.Elements.Count ?? 0}, " +
-                                    $"streamlines: {only?.StreamlineCount ?? 0}.";
-                }
+                // Trace streamlines for this scenario's solution. The electrode surfaces
+                // / Dirichlet walls are shared by every scenario (same mesh), so only the
+                // field (sol) differs between permutations.
+                var streamlines = await Task.Run(() => BuildStreamlines(sol, geom, builtModel));
+                results.Add(BuildScenarioResult(scenarioName, sol, geom, streamlines));
             }
-            catch (Exception exc)
+
+            return results;
+        }
+
+        /// <summary>
+        /// Flag the governing (overall worst-margin) scenario, replace the results view,
+        /// select the governing scenario by default, and report a summary status for
+        /// <paramref name="label"/>.
+        /// </summary>
+        private void PublishResults(List<ScenarioResult> results, string label)
+        {
+            ScenarioResult? governing = null;
+            foreach (var r in results)
             {
-                CurrentSolution = null;
-                StatusMessage = $"Solve failed: {exc.Message}";
+                r.IsGoverning = false;
+                if (r.Solution == null) continue;
+                if (governing == null || r.WorstMargin < governing.WorstMargin)
+                    governing = r;
             }
-            finally
+            if (governing != null) governing.IsGoverning = true;
+
+            ScenarioResults.Clear();
+            foreach (var r in results) ScenarioResults.Add(r);
+
+            // Show the governing scenario by default (worst case drives design review);
+            // fall back to the first scenario that produced a solution, else the first.
+            SelectedScenarioResult =
+                governing
+                ?? results.Find(r => r.Solution != null)
+                ?? (results.Count > 0 ? results[0] : null);
+
+            int solved = results.FindAll(r => r.Solution != null).Count;
+            if (results.Count == 0)
             {
-                IsSolving = false;
-                SolveCommand.NotifyCanExecuteChanged();
+                StatusMessage = $"Solve completed but produced no scenarios for {label}.";
+            }
+            else if (solved == 0)
+            {
+                StatusMessage = $"Solve completed but no results were loaded for {label}. " +
+                                results[0].StatusDetail;
+            }
+            else
+            {
+                StatusMessage = $"Solved {label}: {solved}/{results.Count} scenario(s). " +
+                                (governing != null
+                                    ? $"Governing: {governing.Name} (margin {governing.MarginText}, max |E| {governing.MaxField:N1} kV/mm)."
+                                    : "No constrained gaps found.");
             }
         }
 
@@ -640,7 +799,11 @@ namespace electrostat_UI.ViewModels
             };
         }
 
-        partial void OnIsSolvingChanged(bool value) => SolveCommand.NotifyCanExecuteChanged();
+        partial void OnIsSolvingChanged(bool value)
+        {
+            SolveCutCommand.NotifyCanExecuteChanged();
+            SolveAllCutsCommand.NotifyCanExecuteChanged();
+        }
 
         private static string SafeName(string name)
         {

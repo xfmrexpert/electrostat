@@ -1,20 +1,27 @@
 using System.Collections.Generic;
+using TfmrLib.FEM;
 
 namespace electrostat
 {
     /// <summary>
-    /// Factory for the example cases originally exercised in <c>Program.Main</c>.
+    /// Factory for the example transformer originally exercised in <c>Program.Main</c>.
     /// </summary>
     public static class Examples
     {
-        public static IReadOnlyList<ElectrostatCase> All(bool withLVCornerAngle = true)
+        public static IReadOnlyList<Transformer> All(bool withLVCornerAngle = true)
         {
-            var cases = new List<ElectrostatCase>();
+            var transformers = new List<Transformer>();
 
             var (windings, pressboards, angleRings, staticRings) = BaseComponents(withLVCornerAngle);
 
             double rHVOuter = 1120.0 / 2 + 3.0;
             double topZ = 65.0 + 1238.0 + 32.0 + 10.0 + 3.0 + 24.0 + 26.0 + 55.0 + 38.0;
+
+            // Core / window dimensions that locate the mirrored adjacent phase. The legacy
+            // mirror constant rAdjphCL = 510 + 655 decomposes as 2*CoreLegRadius + WindowWidth,
+            // so CoreLegRadius = 255 (510/2) and WindowWidth = 655.
+            double coreLegRadius = 510.0 / 2;
+            double windowWidth = 655.0;
 
             Dictionary<string, double> voltages = new Dictionary<string, double>();
             voltages["HV"] = 230.0e3;
@@ -40,39 +47,64 @@ namespace electrostat
                     new Dictionary<string, double> { ["HV"] = 0.0, ["LV"] = 110.0e3/2.3, ["RV"] = 0.0 }),
             };
 
-            cases.Add(new ElectrostatCase(
-                "Window Cut (no adjacent phase)",
-                new Domain(RInner: 510.0 / 2, ROuter: 672.0, ZLower: 1000.0, ZUpper: topZ),
-                windings, pressboards, angleRings, staticRings, voltages, scenarios));
+            // Interphase insulation: present only when a cut models the adjacent phase. These
+            // are mirrored along with the rest of the geometry by Transformer.ResolveCut.
+            var interphaseBarriers = new List<PressboardBarrier>
+            {
+                new PressboardBarrier("PB_phase_barrier_1",
+                    R0: 1120.0 / 2 + 3.0 + 13.5, ZBottom: -39.0, Thickness: 3.0,
+                    Height: 36.0 + 1296.0 + 28.0 + 100.0 + 39.0),
+            };
 
-            cases.Add(new ElectrostatCase(
-                "Tank Cut - LV",
-                new Domain(RInner: 510.0 / 2, ROuter: rHVOuter + 80.0, ZLower: 1000.0, ZUpper: topZ),
-                windings, pressboards, angleRings, staticRings, voltages, scenarios));
+            var interphaseAngleRings = new List<AngleRing>
+            {
+                new AngleRing("AR_interphase_1", R0: 576.5,
+                    ZCorner: 65.0 + 1238.0 + 32.0 + 10.0 + 3.0 + 24.0,
+                    Tv: 4.0, Hv: -124.0, Th: 4.0, Wh: -110.5, InsideFilletR: 4.0),
+            };
 
-            cases.Add(new ElectrostatCase(
-                "Tank Cut - PA",
-                new Domain(RInner: 510.0 / 2, ROuter: rHVOuter + 400.0, ZLower: 1000.0, ZUpper: topZ + 510.0),
-                windings, pressboards, angleRings, staticRings, voltages, scenarios));
+            // The cuts: four single-phase axisymmetric slices that differ only by domain
+            // bounds, plus a two-phase window cut solved as a planar problem.
+            var cuts = new List<Cut>
+            {
+                new Cut(
+                    "Window Cut (no adjacent phase)",
+                    new Domain(RInner: 510.0 / 2, ROuter: 672.0, ZLower: 1000.0, ZUpper: topZ),
+                    GeometryType.Axisymmetric),
+                new Cut(
+                    "Tank Cut - LV",
+                    new Domain(RInner: 510.0 / 2, ROuter: rHVOuter + 80.0, ZLower: 1000.0, ZUpper: topZ),
+                    GeometryType.Axisymmetric),
+                new Cut(
+                    "Tank Cut - PA",
+                    new Domain(RInner: 510.0 / 2, ROuter: rHVOuter + 400.0, ZLower: 1000.0, ZUpper: topZ + 510.0),
+                    GeometryType.Axisymmetric),
+                new Cut(
+                    "Tank Cut - End",
+                    new Domain(RInner: 510.0 / 2, ROuter: 672.0, ZLower: 1000.0, ZUpper: topZ + 510.0),
+                    GeometryType.Axisymmetric),
+                new Cut(
+                    "Window Cut (with adjacent phase)",
+                    new Domain(RInner: 510.0 / 2, ROuter: 510.0 / 2 + 655.0, ZLower: 1000.0, ZUpper: topZ),
+                    GeometryType.Planar,
+                    IncludeAdjacentPhase: true),
+            };
 
-            cases.Add(new ElectrostatCase(
-                "Tank Cut - End",
-                new Domain(RInner: 510.0 / 2, ROuter: 672.0, ZLower: 1000.0, ZUpper: topZ + 510.0),
-                windings, pressboards, angleRings, staticRings, voltages, scenarios));
+            transformers.Add(new Transformer(
+                "Example Transformer",
+                coreLegRadius,
+                windowWidth,
+                windings,
+                pressboards,
+                angleRings,
+                staticRings,
+                interphaseBarriers,
+                interphaseAngleRings,
+                voltages,
+                scenarios,
+                cuts));
 
-            // With adjacent phase
-            var (w2, p2, a2, s2) = WithAdjacentPhase(withLVCornerAngle);
-            voltages["HV_2"] = 0.0;
-            voltages["SR_TOP_HV_inner_2_Metal"] = 0.0;
-            voltages["SR_TOP_HV_outer_2_Metal"] = 0.0;
-            voltages["LV_2"] = 0.0;
-            voltages["RV_2"] = 0.0;
-            cases.Add(new ElectrostatCase(
-                "Window Cut (with adjacent phase)",
-                new Domain(RInner: 510.0 / 2, ROuter: 510.0 / 2 + 655.0, ZLower: 1000.0, ZUpper: topZ),
-                w2, p2, a2, s2, voltages));
-
-            return cases;
+            return transformers;
         }
 
         public static (List<WindingBlock>, List<PressboardBarrier>, List<AngleRing>, List<StaticRing>)
@@ -127,64 +159,6 @@ namespace electrostat
                     Width: 45.0, Height: 12.0, RTL: 2.0, RTR: 10.0, RBR: 2.0, RBL: 2.0, TPaper: 3.0,
                     ParentWinding: "HV")
             };
-
-            return (windings, pressboards, angleRings, staticRings);
-        }
-
-        private static (List<WindingBlock>, List<PressboardBarrier>, List<AngleRing>, List<StaticRing>)
-            WithAdjacentPhase(bool withLVCornerAngle)
-        {
-            var (windings, pressboards, angleRings, staticRings) = BaseComponents(withLVCornerAngle);
-
-            pressboards.Add(new PressboardBarrier("PB_phase_barrier_1",
-                R0: 1120.0 / 2 + 3.0 + 13.5, ZBottom: -39.0, Thickness: 3.0,
-                Height: 36.0 + 1296.0 + 28.0 + 100.0 + 39.0));
-
-            angleRings.Add(new AngleRing("AR_interphase_1", R0: 576.5,
-                ZCorner: 65.0 + 1238.0 + 32.0 + 10.0 + 3.0 + 24.0,
-                Tv: 4.0, Hv: -124.0, Th: 4.0, Wh: -110.5, InsideFilletR: 4.0));
-
-            double rAdjphCL = 510.0 + 655.0;
-
-            foreach (var wdg in windings.ToArray())
-            {
-                windings.Add(wdg with { Name = wdg.Name + "_2", R0 = rAdjphCL - (wdg.R0 + wdg.Width) });
-            }
-
-            foreach (var pb in pressboards.ToArray())
-            {
-                var adjPb = pb with { Name = pb.Name + "_2", R0 = rAdjphCL - (pb.R0 + pb.Thickness) };
-                if (adjPb.TaperBottom.HasValue)
-                {
-                    string newSide = adjPb.TaperBottom.Value.Side == "inner" ? "outer" : "inner";
-                    adjPb = adjPb with { TaperBottom = adjPb.TaperBottom.Value with { Side = newSide } };
-                }
-                if (adjPb.TaperTop.HasValue)
-                {
-                    string newSide = adjPb.TaperTop.Value.Side == "inner" ? "outer" : "inner";
-                    adjPb = adjPb with { TaperTop = adjPb.TaperTop.Value with { Side = newSide } };
-                }
-                pressboards.Add(adjPb);
-            }
-
-            foreach (var ar in angleRings.ToArray())
-            {
-                angleRings.Add(ar with { Name = ar.Name + "_2", R0 = rAdjphCL - ar.R0, Wh = -ar.Wh });
-            }
-
-            foreach (var sr in staticRings.ToArray())
-            {
-                staticRings.Add(sr with
-                {
-                    Name = sr.Name + "_2",
-                    R0 = rAdjphCL - (sr.R0 + sr.Width),
-                    RTL = sr.RTR,
-                    RTR = sr.RTL,
-                    RBL = sr.RBR,
-                    RBR = sr.RBL,
-                    ParentWinding = string.IsNullOrEmpty(sr.ParentWinding) ? null : sr.ParentWinding + "_2"
-                });
-            }
 
             return (windings, pressboards, angleRings, staticRings);
         }
