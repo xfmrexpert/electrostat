@@ -66,9 +66,38 @@ namespace electrostat_UI.ViewModels
         /// <summary>Per-streamline stress metrics shown in the Streamline Stress tab.</summary>
         public ObservableCollection<StreamlineSummaryRow> StreamlineSummary { get; } = new();
 
+        /// <summary>
+        /// One entry per solved voltage permutation (scenario). Drives the scenario
+        /// selector and the cross-scenario envelope table. Empty until a solve runs.
+        /// </summary>
+        public ObservableCollection<ScenarioResult> ScenarioResults { get; } = new();
+
+        /// <summary>
+        /// The scenario whose field plot + stress table are currently shown. Selecting a
+        /// different scenario swaps the displayed solution / streamlines / summary without
+        /// re-solving.
+        /// </summary>
+        [ObservableProperty]
+        private ScenarioResult? _selectedScenarioResult;
+
         // Coalesces rapid edits (e.g. while dragging a NumericUpDown spinner) into a
         // single geometry rebuild so the UI stays responsive.
         private readonly DispatcherTimer _rebuildTimer;
+
+        // True while RebuildCaseTree is swapping the tree's nodes. The TreeView writes its
+        // SelectedItem back to null as the old nodes are cleared; this guard stops that
+        // transient null from tearing down the editor pane mid-rebuild.
+        private bool _suppressTreeSelectionSync;
+
+        // Identity of the root node from the previous rebuild. When it changes a different
+        // case was loaded (so the explorer starts fresh with the root expanded); when it is
+        // unchanged we are rebuilding the same case in place and preserve expansion exactly.
+        private object? _lastRootKey;
+
+        // The most recently built model (geometry-only rebuild or full mesh build). Owns the
+        // component-surface lookup, electrode surfaces, and Dirichlet wall loops that the
+        // highlight and streamline features read. Replaces the former GeometryBuilder statics.
+        private BuiltModel? _activeModel;
 
         public MainWindowViewModel()
         {
@@ -87,15 +116,23 @@ namespace electrostat_UI.ViewModels
         {
             CurrentSolution = null;
             Streamlines = null;
+            ScenarioResults.Clear();
+            SelectedScenarioResult = null;
             SolveCommand.NotifyCanExecuteChanged();
 
             if (EditingCase != null)
+            {
                 EditingCase.Changed -= OnCaseChanged;
+                EditingCase.StructureChanged -= OnCaseStructureChanged;
+            }
 
             EditingCase = value != null ? new ElectrostatCaseViewModel(value) : null;
 
             if (EditingCase != null)
+            {
                 EditingCase.Changed += OnCaseChanged;
+                EditingCase.StructureChanged += OnCaseStructureChanged;
+            }
 
             RebuildCaseTree();
             RebuildGeometry();
@@ -115,16 +152,41 @@ namespace electrostat_UI.ViewModels
                 StreamlineSummary.Add(StreamlineSummaryRow.FromStreamline(index++, s));
         }
 
+        partial void OnSelectedScenarioResultChanged(ScenarioResult? value)
+        {
+            // Swap the displayed field solution + streamlines to the chosen scenario without
+            // re-solving. OnStreamlinesChanged rebuilds the stress summary table.
+            if (value == null) return;
+            CurrentSolution = value.Solution;
+            CurrentGeometry = value.Geometry ?? CurrentGeometry;
+            Streamlines = value.Streamlines;
+            UpdateHighlight();
+        }
+
         private void OnCaseChanged()
         {
-            // Debounce: restart the timer on every change.
+            // Pure value edits (e.g. dragging a NumericUpDown) only affect the geometry.
+            // Debounce: restart the timer on every change. The case explorer is left intact
+            // so its expansion / selection survive editing — it is rebuilt only when the
+            // structure actually changes (see OnCaseStructureChanged).
             _rebuildTimer.Stop();
             _rebuildTimer.Start();
+        }
+
+        private void OnCaseStructureChanged()
+        {
+            // Structural edits (add / remove / rename / re-parent) change tree labels or
+            // membership, so refresh the explorer — preserving expansion + selection.
             RebuildCaseTree();
         }
 
         partial void OnSelectedTreeNodeChanged(CaseTreeNode? value)
         {
+            // Ignore the transient null the TreeView reports while its items are swapped out
+            // during a rebuild; RestoreSelection re-applies the real selection afterward.
+            if (_suppressTreeSelectionSync && value == null)
+                return;
+
             SelectedComponent = value?.Model;
             UpdateHighlight();
         }
@@ -138,14 +200,18 @@ namespace electrostat_UI.ViewModels
             };
 
             if (key == null ||
-                !GeometryBuilder.ComponentSurfaces.TryGetValue(key, out var list))
+                _activeModel == null ||
+                !_activeModel.ComponentSurfaces.TryGetValue(key, out var list))
             {
                 HighlightedSurfaces = null;
                 return;
             }
 
             // Filter to surfaces still present in the current geometry (some may have
-            // been removed after clipping / electrode-interior pruning).
+            // been removed after clipping). Electrode interiors (windings, static-ring
+            // metals) are intentionally pruned from geometry.Surfaces so gmsh does not
+            // mesh them, but they are still valid, drawable surfaces (their boundaries are
+            // clipped in place) — include them so selected electrodes still highlight.
             var current = CurrentGeometry;
             if (current == null)
             {
@@ -153,6 +219,7 @@ namespace electrostat_UI.ViewModels
                 return;
             }
             var live = new HashSet<GeomSurface>(current.Surfaces, ReferenceEqualityComparer.Instance);
+            live.UnionWith(_activeModel.ElectrodeSurfaces);
             HighlightedSurfaces = list.Where(s => live.Contains(s)).ToList();
         }
 
@@ -170,12 +237,14 @@ namespace electrostat_UI.ViewModels
             try
             {
                 var model = ec.ToModel();
-                CurrentGeometry = GeometryBuilder.BuildGeometryOnly(model, clipToDomain: true);
+                _activeModel = GeometryBuilder.BuildGeometryOnly(model, clipToDomain: true);
+                CurrentGeometry = _activeModel.Geometry;
                 StatusMessage = $"{model.Name}: {CurrentGeometry.Surfaces.Count} surfaces";
                 UpdateHighlight();
             }
             catch (Exception ex)
             {
+                _activeModel = null;
                 CurrentGeometry = null;
                 HighlightedSurfaces = null;
                 StatusMessage = $"Failed to build {ec.Name}: {ex.Message}";
@@ -236,6 +305,19 @@ namespace electrostat_UI.ViewModels
         }
 
         [RelayCommand]
+        private void AddScenario()
+        {
+            if (EditingCase == null) return;
+            // New scenario seeds each winding's voltage from its current per-winding value
+            // so it starts as a copy of present conditions, ready to edit.
+            var sc = new VoltageScenarioViewModel(
+                UniqueName("Scenario", EditingCase.Scenarios.Select(x => x.Name)));
+            foreach (var wdg in EditingCase.Windings)
+                sc.Cells.Add(new ScenarioVoltageCell(wdg.Name, wdg.Voltage));
+            EditingCase.Scenarios.Add(sc);
+        }
+
+        [RelayCommand]
         private void RemoveSelected()
         {
             if (EditingCase == null) return;
@@ -245,6 +327,7 @@ namespace electrostat_UI.ViewModels
                 case PressboardViewModel p: EditingCase.Pressboards.Remove(p); break;
                 case AngleRingViewModel a: EditingCase.AngleRings.Remove(a); break;
                 case StaticRingViewModel s: EditingCase.StaticRings.Remove(s); break;
+                case VoltageScenarioViewModel sc: EditingCase.Scenarios.Remove(sc); break;
             }
         }
 
@@ -259,31 +342,132 @@ namespace electrostat_UI.ViewModels
 
         private void RebuildCaseTree()
         {
-            CaseTree.Clear();
-            var ec = EditingCase;
-            if (ec == null) return;
+            // Preserve which nodes are expanded and which is selected across the rebuild so
+            // editing a component does not collapse the explorer or clear the editor pane.
+            var expandedKeys = new HashSet<object>(ReferenceEqualityComparer.Instance);
+            CollectExpandedKeys(CaseTree, expandedKeys);
+            var selectedKey = SelectedTreeNode?.Key;
+            var previousRootKey = _lastRootKey;
 
-            var root = new CaseTreeNode(ec.Name, ec);
+            _suppressTreeSelectionSync = true;
+            try
+            {
+                CaseTree.Clear();
+                var ec = EditingCase;
+                if (ec == null)
+                {
+                    _lastRootKey = null;
+                    return;
+                }
 
-            root.Children.Add(new CaseTreeNode("Domain", ec.Domain));
+                var root = new CaseTreeNode(ec.Name, ec);
 
-            var w = new CaseTreeNode($"Windings ({ec.Windings.Count})");
-            foreach (var x in ec.Windings) w.Children.Add(new CaseTreeNode(x.Name, x));
-            root.Children.Add(w);
+                root.Children.Add(new CaseTreeNode("Domain", ec.Domain));
 
-            var p = new CaseTreeNode($"Pressboards ({ec.Pressboards.Count})");
-            foreach (var x in ec.Pressboards) p.Children.Add(new CaseTreeNode(x.Name, x));
-            root.Children.Add(p);
+                // Nest each static ring under its parent winding; rings without a parent stay
+                // in the top-level "Static Rings" group.
+                var w = new CaseTreeNode($"Windings ({ec.Windings.Count})", key: GroupWindings);
+                foreach (var x in ec.Windings)
+                {
+                    var wNode = new CaseTreeNode(x.Name, x);
+                    foreach (var sr in ec.StaticRings)
+                        if (sr.IsVoltageInherited && sr.ParentWinding == x.Name)
+                            wNode.Children.Add(new CaseTreeNode($"{sr.Name} (ring)", sr));
+                    w.Children.Add(wNode);
+                }
+                root.Children.Add(w);
 
-            var a = new CaseTreeNode($"Angle Rings ({ec.AngleRings.Count})");
-            foreach (var x in ec.AngleRings) a.Children.Add(new CaseTreeNode(x.Name, x));
-            root.Children.Add(a);
+                var p = new CaseTreeNode($"Pressboards ({ec.Pressboards.Count})", key: GroupPressboards);
+                foreach (var x in ec.Pressboards) p.Children.Add(new CaseTreeNode(x.Name, x));
+                root.Children.Add(p);
 
-            var s = new CaseTreeNode($"Static Rings ({ec.StaticRings.Count})");
-            foreach (var x in ec.StaticRings) s.Children.Add(new CaseTreeNode(x.Name, x));
-            root.Children.Add(s);
+                var a = new CaseTreeNode($"Angle Rings ({ec.AngleRings.Count})", key: GroupAngleRings);
+                foreach (var x in ec.AngleRings) a.Children.Add(new CaseTreeNode(x.Name, x));
+                root.Children.Add(a);
 
-            CaseTree.Add(root);
+                var unparented = ec.StaticRings.Where(sr => !sr.IsVoltageInherited).ToList();
+                var s = new CaseTreeNode($"Static Rings ({unparented.Count})", key: GroupStaticRings);
+                foreach (var x in unparented) s.Children.Add(new CaseTreeNode(x.Name, x));
+                root.Children.Add(s);
+
+                var sc = new CaseTreeNode($"Scenarios ({ec.Scenarios.Count})", key: GroupScenarios);
+                foreach (var x in ec.Scenarios) sc.Children.Add(new CaseTreeNode(x.Name, x));
+                root.Children.Add(sc);
+
+                CaseTree.Add(root);
+                _lastRootKey = root.Key;
+
+                // A different case was loaded: start fresh with every node expanded so the
+                // whole component tree is visible by default. Rebuilding the same case in
+                // place instead restores exactly what the user had expanded.
+                if (!ReferenceEquals(previousRootKey, root.Key))
+                    ExpandAll(CaseTree);
+
+                RestoreExpansion(CaseTree, expandedKeys);
+
+                // Re-select the same node; if it no longer exists (e.g. it was just removed),
+                // clear the selection so the editor pane doesn't linger on a deleted item.
+                if (!RestoreSelection(CaseTree, selectedKey))
+                {
+                    SelectedTreeNode = null;
+                    SelectedComponent = null;
+                    UpdateHighlight();
+                }
+            }
+            finally
+            {
+                _suppressTreeSelectionSync = false;
+            }
+        }
+
+        /// <summary>Group-node keys: stable across rebuilds even as the "(count)" label changes.</summary>
+        private const string GroupWindings = "group:windings";
+        private const string GroupPressboards = "group:pressboards";
+        private const string GroupAngleRings = "group:anglerings";
+        private const string GroupStaticRings = "group:staticrings";
+        private const string GroupScenarios = "group:scenarios";
+
+        private static void CollectExpandedKeys(IEnumerable<CaseTreeNode> nodes, HashSet<object> into)
+        {
+            foreach (var n in nodes)
+            {
+                if (n.IsExpanded) into.Add(n.Key);
+                CollectExpandedKeys(n.Children, into);
+            }
+        }
+
+        private static void ExpandAll(IEnumerable<CaseTreeNode> nodes)
+        {
+            foreach (var n in nodes)
+            {
+                n.IsExpanded = true;
+                ExpandAll(n.Children);
+            }
+        }
+
+        private static void RestoreExpansion(IEnumerable<CaseTreeNode> nodes, HashSet<object> expandedKeys)
+        {
+            foreach (var n in nodes)
+            {
+                if (expandedKeys.Contains(n.Key)) n.IsExpanded = true;
+                RestoreExpansion(n.Children, expandedKeys);
+            }
+        }
+
+        private bool RestoreSelection(IEnumerable<CaseTreeNode> nodes, object? selectedKey)
+        {
+            if (selectedKey == null) return false;
+            foreach (var n in nodes)
+            {
+                if (ReferenceEquals(n.Key, selectedKey))
+                {
+                    SelectedTreeNode = n;
+                    return true;
+                }
+                if (RestoreSelection(n.Children, selectedKey))
+                    return true;
+            }
+            return false;
         }
 
         private bool CanSolve() => EditingCase != null && !IsSolving;
@@ -297,33 +481,111 @@ namespace electrostat_UI.ViewModels
             IsSolving = true;
             SolveCommand.NotifyCanExecuteChanged();
             var ex = ec.ToModel();
-            StatusMessage = $"Solving {ex.Name}...";
+
+            // A case with no scenarios solves once from its base voltages (labelled "Base");
+            // otherwise every scenario is evaluated. The geometry/mesh depends only on the
+            // components (not the voltages), so it is built ONCE below and the solver
+            // evaluates every scenario against that same mesh in a single run — only the
+            // Dirichlet potentials change between permutations.
+            var scenarios = ex.Scenarios is { Count: > 0 }
+                ? ex.Scenarios
+                : new List<VoltageScenario> { };
+
+            bool hasScenarios = scenarios.Count > 0;
+            int total = hasScenarios ? scenarios.Count : 1;
 
             try
             {
                 var caseName = SafeName(ex.Name);
-                var problem = await Task.Run(() =>
-                    GeometryBuilder.BuildAndSolve(ex, caseName, lc: 5.0, clipToDomain: true));
 
-                CurrentGeometry = GeometryBuilder.geometry;
-                UpdateHighlight();
+                // Build geometry + mesh ONCE. The build also creates a voltage Scenario for
+                // every permutation (or a single "Base"), so the solver can evaluate them all
+                // against this one mesh. Seed the base effective voltages so a Dirichlet BC /
+                // terminal is created for every electrode and wall.
+                StatusMessage = $"Building mesh for {ex.Name}...";
+                var builtModel = await Task.Run(() => GeometryBuilder.BuildMesh(
+                    ex with { Voltages = ex.EffectiveVoltages(null) },
+                    caseName, lc: 5.0, clipToDomain: true));
+                _activeModel = builtModel;
 
-                CurrentSolution = problem?.Solution;
-                if (CurrentSolution == null)
+                // The electrode surfaces / Dirichlet walls and geometry are stable for the
+                // life of this mesh (no further rebuilds), so capture the geometry once and
+                // reuse it for every scenario's streamlines and result.
+                var geom = builtModel.Geometry;
+
+                // Solve once: the solver evaluates every scenario in the deck and writes one
+                // results file per scenario, which BuiltModel.Solve collects into
+                // ScenarioSolutions.
+                StatusMessage = hasScenarios
+                    ? $"Solving {ex.Name}: {total} scenario(s)..."
+                    : $"Solving {ex.Name}...";
+                await Task.Run(() => builtModel.Solve());
+
+                var results = new List<ScenarioResult>(builtModel.ScenarioSolutions.Count);
+                foreach (var scenarioSolution in builtModel.ScenarioSolutions)
                 {
-                    Streamlines = null;
-                    var reason = (problem as MFEMProblem)?.LastLoadError;
-                    var resultsPath = (problem as MFEMProblem)?.ResultsFile;
+                    string scenarioName = scenarioSolution.Name;
+                    var sol = scenarioSolution.Solution;
+
+                    if (sol == null)
+                    {
+                        var reason = (builtModel.Problem as MFEMProblem)?.LastLoadError;
+                        results.Add(new ScenarioResult
+                        {
+                            Name = scenarioName,
+                            Geometry = geom,
+                            StatusDetail = reason ?? $"No results were produced for scenario '{scenarioName}'.",
+                        });
+                        continue;
+                    }
+
+                    // Trace streamlines for this scenario's solution. The electrode surfaces
+                    // / Dirichlet walls are shared by every scenario (same mesh), so only the
+                    // field (sol) differs between permutations.
+                    var streamlines = await Task.Run(() => BuildStreamlines(sol, geom, builtModel));
+                    results.Add(BuildScenarioResult(scenarioName, sol, geom, streamlines));
+                }
+
+                // Flag the governing (overall worst-margin) scenario for the envelope view.
+                ScenarioResult? governing = null;
+                foreach (var r in results)
+                {
+                    r.IsGoverning = false;
+                    if (r.Solution == null) continue;
+                    if (governing == null || r.WorstMargin < governing.WorstMargin)
+                        governing = r;
+                }
+                if (governing != null) governing.IsGoverning = true;
+
+                ScenarioResults.Clear();
+                foreach (var r in results) ScenarioResults.Add(r);
+
+                // Show the governing scenario by default (worst case drives design review);
+                // fall back to the first scenario that produced a solution, else the first.
+                SelectedScenarioResult =
+                    governing
+                    ?? results.Find(r => r.Solution != null)
+                    ?? (results.Count > 0 ? results[0] : null);
+
+                int solved = results.FindAll(r => r.Solution != null).Count;
+                if (solved == 0)
+                {
                     StatusMessage = $"Solve completed but no results were loaded for {ex.Name}. " +
-                                    (reason ?? $"Expected results at '{resultsPath ?? "<unset>"}'.");
+                                    (results.Count > 0 ? results[0].StatusDetail : null);
+                }
+                else if (hasScenarios)
+                {
+                    StatusMessage = $"Solved {ex.Name}: {solved}/{total} scenarios. " +
+                                    (governing != null
+                                        ? $"Governing: {governing.Name} (margin {governing.MarginText}, max |E| {governing.MaxField:N1} kV/mm)."
+                                        : "No constrained gaps found.");
                 }
                 else
                 {
-                    Streamlines = await Task.Run(() =>
-                        BuildStreamlines(CurrentSolution!, CurrentGeometry));
-                    StatusMessage = $"Solved {ex.Name}. Nodal views: {CurrentSolution.NodalScalars.Count}, " +
-                                    $"elements: {CurrentSolution.Mesh?.Elements.Count ?? 0}, " +
-                                    $"streamlines: {Streamlines?.Count ?? 0}.";
+                    var only = SelectedScenarioResult;
+                    StatusMessage = $"Solved {ex.Name}. Nodal views: {only?.Solution?.NodalScalars.Count ?? 0}, " +
+                                    $"elements: {only?.Solution?.Mesh?.Elements.Count ?? 0}, " +
+                                    $"streamlines: {only?.StreamlineCount ?? 0}.";
                 }
             }
             catch (Exception exc)
@@ -336,6 +598,46 @@ namespace electrostat_UI.ViewModels
                 IsSolving = false;
                 SolveCommand.NotifyCanExecuteChanged();
             }
+        }
+
+        /// <summary>
+        /// Aggregate a scenario's traced streamlines into a <see cref="ScenarioResult"/>:
+        /// worst (minimum) safety margin, maximum local |E|, and the governing hot-spot.
+        /// The streamline list arrives sorted worst-margin first.
+        /// </summary>
+        private static ScenarioResult BuildScenarioResult(
+            string name, FEMSolution sol, Geometry? geom,
+            IReadOnlyList<StreamlineWithMargin> streamlines)
+        {
+            double worstMargin = double.PositiveInfinity;
+            double maxField = 0;
+            int governingIndex = 0;
+            double gx = 0, gy = 0;
+
+            for (int i = 0; i < streamlines.Count; i++)
+            {
+                var s = streamlines[i];
+                if (s.Stress.MaxE > maxField) maxField = s.Stress.MaxE;
+                if (s.MinMargin < worstMargin)
+                {
+                    worstMargin = s.MinMargin;
+                    governingIndex = i + 1;
+                    (gx, gy) = GoverningHotspot(s);
+                }
+            }
+
+            return new ScenarioResult
+            {
+                Name = name,
+                Solution = sol,
+                Geometry = geom,
+                Streamlines = streamlines,
+                WorstMargin = worstMargin,
+                MaxField = maxField,
+                GoverningIndex = governingIndex,
+                GoverningX = gx,
+                GoverningY = gy,
+            };
         }
 
         partial void OnIsSolvingChanged(bool value) => SolveCommand.NotifyCanExecuteChanged();
@@ -353,7 +655,7 @@ namespace electrostat_UI.ViewModels
         /// seeding from a coarse grid and tracing forward + backward along E. Lines
         /// terminate when they cross a conductor boundary or leave the meshed domain.
         /// </summary>
-        private static IReadOnlyList<StreamlineWithMargin> BuildStreamlines(FEMSolution sol, Geometry? geom)
+        private static IReadOnlyList<StreamlineWithMargin> BuildStreamlines(FEMSolution sol, Geometry? geom, BuiltModel model)
         {
             var lines = new List<StreamlineWithMargin>();
             if (sol.Mesh == null || sol.Mesh.Nodes.Count == 0) return lines;
@@ -377,9 +679,9 @@ namespace electrostat_UI.ViewModels
             GeometryClipper? clipper = null;
             var loops = new List<ClipLoop>();
             int nextId = 0;
-            foreach (var surf in GeometryBuilder.ElectrodeSurfaces)
+            foreach (var surf in model.ElectrodeSurfaces)
                 loops.Add(new ClipLoop(nextId++, surf.Boundary, IsHole: true));
-            foreach (var wallLoop in GeometryBuilder.DirichletWallLoops)
+            foreach (var wallLoop in model.DirichletWallLoops)
                 loops.Add(new ClipLoop(nextId++, wallLoop, IsHole: false));
             if (loops.Count > 0)
                 clipper = new GeometryClipper(loops);
@@ -404,9 +706,9 @@ namespace electrostat_UI.ViewModels
             // bulk oil and misses the lines that matter. All electrodes are treated
             // uniformly. The strategy is pluggable via IStreamlineSeedStrategy.
             var boundaries = new List<GeomLineLoop>();
-            foreach (var surf in GeometryBuilder.ElectrodeSurfaces)
+            foreach (var surf in model.ElectrodeSurfaces)
                 boundaries.Add(surf.Boundary);
-            boundaries.AddRange(GeometryBuilder.DirichletWallLoops);
+            boundaries.AddRange(model.DirichletWallLoops);
 
             var seedContext = new StreamlineSeedContext
             {

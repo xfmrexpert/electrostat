@@ -1,26 +1,39 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using Avalonia;
+using Avalonia.Collections;
 using Avalonia.Controls;
+using Avalonia.Controls.Shapes;
+using Avalonia.Layout;
 using Avalonia.Media;
 using electrostat;
+using electrostat_UI.ViewModels;
+using LiveChartsCore;
+using LiveChartsCore.Defaults;
+using LiveChartsCore.Measure;
+using LiveChartsCore.SkiaSharpView;
+using LiveChartsCore.SkiaSharpView.Avalonia;
+using LiveChartsCore.SkiaSharpView.Painting;
+using LiveChartsCore.SkiaSharpView.Painting.Effects;
+using SkiaSharp;
 
 namespace electrostat_UI.Views
 {
     /// <summary>
-    /// A lightweight, self-drawn plot of stress and margin along a single
-    /// <see cref="StreamlineWithMargin"/>. Two stacked panels share an arc-length
-    /// X axis:
+    /// LiveCharts2-based plot of stress and margin along a single
+    /// <see cref="StreamlineWithMargin"/>. Two stacked <see cref="CartesianChart"/>s share
+    /// an arc-length X axis:
     /// <list type="bullet">
-    /// <item>top: local |E| (solid) versus the Wiedmann allowable field (dashed), kV/mm;</item>
-    /// <item>bottom: cumulative safety margin E_design / E_average with a red limit line at 1.0.</item>
+    /// <item>top: local |E| (blue), the falling field <c>E_falling</c> (light grey), the
+    /// cumulative average <c>E_average</c> (orange) and the Weidmann withstand
+    /// <c>E_design</c> (green dashed), all in kV/mm;</item>
+    /// <item>bottom: cumulative safety margin σ(d) = E_design / E_average with the &lt; 1.0
+    /// danger zone shaded and the 1.0 limit marked.</item>
     /// </list>
-    /// Rendered with Avalonia's vector <see cref="DrawingContext"/> (no GPU lease
-    /// needed) since the data is at most a few thousand points and the window is
-    /// static once opened.
+    /// Every series is named so the legend identifies each curve (in particular the
+    /// otherwise-cryptic light-grey <c>E_falling</c> rearrangement).
     /// </summary>
-    public class StreamlineStressPlotView : Control
+    public class StreamlineStressPlotView : UserControl
     {
         public static readonly StyledProperty<StreamlineWithMargin?> StreamlineProperty =
             AvaloniaProperty.Register<StreamlineStressPlotView, StreamlineWithMargin?>(nameof(Streamline));
@@ -40,54 +53,62 @@ namespace electrostat_UI.Views
             set => SetValue(StreamlineNumberProperty, value);
         }
 
-        private static readonly IBrush s_axisBrush = new SolidColorBrush(Color.FromRgb(60, 60, 60));
-        private static readonly IBrush s_gridBrush = new SolidColorBrush(Color.FromArgb(40, 0, 0, 0));
-        private static readonly IBrush s_stressBrush = new SolidColorBrush(Color.FromRgb(30, 90, 200));
-        private static readonly IBrush s_avgBrush = new SolidColorBrush(Color.FromRgb(210, 120, 0));
-        private static readonly IBrush s_designBrush = new SolidColorBrush(Color.FromRgb(20, 150, 60));
-        private static readonly IBrush s_fallingBrush = new SolidColorBrush(Color.FromArgb(150, 110, 110, 110));
-        private static readonly IBrush s_sepBrush = new SolidColorBrush(Color.FromArgb(50, 0, 0, 0));
-        private static readonly IBrush s_limitBrush = new SolidColorBrush(Color.FromRgb(210, 40, 40));
+        // The plot palette (series, axes, grid) is tuned for a white background, as in
+        // the original hand-drawn view. Force white here so it stays readable regardless
+        // of the app's (possibly dark) system theme.
+        private static readonly IBrush s_textBrush = new SolidColorBrush(Color.FromRgb(60, 60, 60));
 
-        static StreamlineStressPlotView()
-        {
-            AffectsRender<StreamlineStressPlotView>(StreamlineProperty, StreamlineNumberProperty);
-        }
+        // Series colors, matching the previous hand-drawn palette.
+        private static readonly SKColor s_axisColor = new(60, 60, 60);
+        private static readonly SKColor s_stressColor = new(30, 90, 200);   // |E| (actual)
+        private static readonly SKColor s_avgColor = new(210, 120, 0);      // E_average
+        private static readonly SKColor s_designColor = new(20, 150, 60);   // E_design (withstand)
+        private static readonly SKColor s_fallingColor = new(110, 110, 110, 150); // E_falling
+        private static readonly SKColor s_limitColor = new(210, 40, 40);
+        private static readonly SKColor s_sepColor = new(0, 0, 0, 60);
+        private static readonly SKColor s_gridColor = new(0, 0, 0, 28);
+
+        private const double GapPad = 2.0;       // mm of whitespace between gaps on the axis
+        private const double MarginCeil = 4.0;   // cap for the safety-margin axis
 
         public StreamlineStressPlotView()
         {
-            ClipToBounds = true;
+            // The chart palette is designed for a light background; pin it so the plot
+            // does not inherit a dark system theme (which left text unreadable).
+            Background = Brushes.White;
+            BuildContent();
         }
 
-        public override void Render(DrawingContext context)
+        protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
         {
-            base.Render(context);
-            context.FillRectangle(Brushes.White, new Rect(Bounds.Size));
+            base.OnPropertyChanged(change);
+            if (change.Property == StreamlineProperty || change.Property == StreamlineNumberProperty)
+                BuildContent();
+        }
 
+        private void BuildContent()
+        {
             var s = Streamline;
             var pts = s?.Points;
+
             if (s == null || pts == null || pts.Count < 2)
             {
-                DrawCenteredText(context, "No streamline data.", s_axisBrush);
+                Content = CenteredMessage("No streamline data.");
                 return;
             }
 
-            // Title.
             string title = $"Streamline #{StreamlineNumber} — cumulative-method stress & margin";
-            DrawText(context, title, new Point(12, 6), 15, s_axisBrush, bold: true);
-
             var gaps = s.OilGaps;
+
             if (gaps == null || gaps.Count == 0)
             {
-                DrawCenteredText(context,
-                    "This streamline has no oil gap — the Weidmann cumulative method does not apply.",
-                    s_axisBrush);
+                Content = TitledMessage(title,
+                    "This streamline has no oil gap — the Weidmann cumulative method does not apply.");
                 return;
             }
 
             // Lay the oil gaps out end-to-end on a single cumulative-distance axis. Each
             // gap's curves run over d ∈ (0, gapLength]; a small pad separates gaps.
-            const double gapPad = 2.0; // mm of whitespace between gaps on the axis
             var gapX0 = new double[gaps.Count]; // axis offset where each gap starts
             double xMax = 0;
             double y1Max = 0, maxMargin = 0;
@@ -96,7 +117,7 @@ namespace electrostat_UI.Views
                 gapX0[gi] = xMax;
                 var g = gaps[gi];
                 xMax += g.GapLength;
-                if (gi < gaps.Count - 1) xMax += gapPad;
+                if (gi < gaps.Count - 1) xMax += GapPad;
                 for (int j = 0; j < g.Distance.Count; j++)
                 {
                     if (g.EFalling[j] > y1Max) y1Max = g.EFalling[j];
@@ -114,122 +135,334 @@ namespace electrostat_UI.Views
             y1Max *= 1.15;
             // Margin grows large as d→0 (E_design→∞); cap the axis so the design-relevant
             // region around the 1.0 limit stays readable. Always show at least up to 2×.
-            const double marginCeil = 4.0;
-            double y2Max = Math.Max(2.0, Math.Min(maxMargin, marginCeil) * 1.1);
+            double y2Max = Math.Max(2.0, Math.Min(maxMargin, MarginCeil) * 1.1);
 
-            const double titleH = 30;
-            const double gap = 14;
-            double availH = Bounds.Height - titleH - 24; // leave room for footer
-            if (availH < 80) return;
-            double subH = (availH - gap) / 2.0;
-
-            var top = new Rect(0, titleH, Bounds.Width, subH);
-            var bottom = new Rect(0, titleH + subH + gap, Bounds.Width, subH);
-
-            // --- Top panel: |E| / falling / average / withstand ---
-            _ = DrawAxes(context, top,
-                "Stress: |E| (blue) · E_avg (orange) · withstand E_design(d) (green dashed)  —  kV/mm",
-                0, xMax, 0, y1Max, showXTitle: false, out var map1);
-
-            var fallingPen = new Pen(s_fallingBrush, 1.0);
-            var avgPen = new Pen(s_avgBrush, 2.2);
-            var designPen = new Pen(s_designBrush, 1.8) { DashStyle = new DashStyle(new double[] { 5, 3 }, 0) };
-            var sepPen = new Pen(s_sepBrush, 1.0) { DashStyle = new DashStyle(new double[] { 2, 3 }, 0) };
-            var stressPen = new Pen(s_stressBrush, 1.6);
-
-            for (int gi = 0; gi < gaps.Count; gi++)
-            {
-                var g = gaps[gi];
-                double x0 = gapX0[gi];
-                int m = g.Distance.Count;
-                if (m < 1) continue;
-
-                // Gap separator.
-                if (gi > 0)
-                {
-                    double sx = x0 - gapPad * 0.5;
-                    context.DrawLine(sepPen, map1(sx, 0), map1(sx, y1Max));
-                }
-
-                // Falling function (faint), cumulative average, and distance-dependent
-                // withstand E_design(d) — all in falling order over d.
-                DrawGapSeries(context, map1, x0, g.Distance, g.EFalling, fallingPen, y1Max);
-                DrawGapSeries(context, map1, x0, g.Distance, g.EDesign, designPen, y1Max);
-                DrawGapSeries(context, map1, x0, g.Distance, g.EAverage, avgPen, y1Max);
-
-                // Mark the governing point (min margin) on the average curve.
-                var gp = map1(x0 + g.GoverningDistance, Math.Min(g.GoverningEAverage, y1Max));
-                context.DrawEllipse(s_avgBrush, null, gp, 3.5, 3.5);
-            }
-
-            // Actual |E| profile in physical order, mapped onto each gap's axis span so
-            // the reader can relate the falling rearrangement back to the real line.
-            DrawActualFieldPerGap(context, map1, pts, gaps, gapX0, y1Max, stressPen);
-
-            // --- Bottom panel: cumulative safety margin σ(d) = E_design(d)/E_average(d) ---
-            _ = DrawAxes(context, bottom,
-                "Safety margin  σ(d) = E_design(d) / E_avg(d)   (governing = minimum)",
-                0, xMax, 0, y2Max, showXTitle: true, out var map2);
-
-            // 1.0 limit reference line (margin = 1 is exactly at the withstand limit).
-            if (1.0 <= y2Max)
-            {
-                var limitPen = new Pen(s_limitBrush, 1.4) { DashStyle = new DashStyle(new double[] { 4, 3 }, 0) };
-                context.DrawLine(limitPen, map2(0, 1.0), map2(xMax, 1.0));
-                DrawText(context, "1.0 (limit)", new Point(map2(xMax, 1.0).X - 70, map2(0, 1.0).Y - 16), 11, s_limitBrush);
-            }
-
-            for (int gi = 0; gi < gaps.Count; gi++)
-            {
-                var g = gaps[gi];
-                double x0 = gapX0[gi];
-                if (gi > 0)
-                {
-                    double sx = x0 - gapPad * 0.5;
-                    context.DrawLine(sepPen, map2(sx, 0), map2(sx, y2Max));
-                }
-                DrawColoredMarginGap(context, map2, x0, g.Distance, g.Margin, y2Max);
-
-                // Governing (minimum) margin marker.
-                var gp = map2(x0 + g.GoverningDistance, Math.Min(g.GoverningMargin, y2Max));
-                context.DrawEllipse(new SolidColorBrush(MarginColor(MarginSeverity(g.GoverningMargin))), null, gp, 3.5, 3.5);
-            }
+            var stressChart = BuildStressChart(s, gaps, gapX0, xMax, y1Max);
+            var marginChart = BuildMarginChart(gaps, gapX0, xMax, y2Max);
 
             // Footer with the governing numbers (matches the hover tooltip / table).
-            var row = electrostat_UI.ViewModels.StreamlineSummaryRow.FromStreamline(StreamlineNumber, s);
+            var row = StreamlineSummaryRow.FromStreamline(StreamlineNumber, s);
             string footer =
                 $"Governing:  E_avg {row.PeakField:F2} kV/mm   vs   E_design {(double.IsPositiveInfinity(row.AllowableField) ? "n/a" : row.AllowableField.ToString("F2") + " kV/mm")}" +
                 $"    Margin {row.MarginText}    ({gaps.Count} oil gap{(gaps.Count == 1 ? "" : "s")})";
-            DrawText(context, footer, new Point(12, Bounds.Height - 20), 12, s_axisBrush);
+
+            var grid = new Grid
+            {
+                Margin = new Thickness(8),
+                RowDefinitions = new RowDefinitions("Auto,Auto,*,*,Auto"),
+            };
+
+            var titleBlock = new TextBlock
+            {
+                Text = title,
+                FontWeight = FontWeight.SemiBold,
+                FontSize = 15,
+                Foreground = s_textBrush,
+                Margin = new Thickness(4, 2, 4, 6),
+            };
+            Grid.SetRow(titleBlock, 0);
+
+            // Custom legend in its own layout row so it never overlaps plot / grid lines
+            // (LiveCharts' in-chart legend is hidden below).
+            var legend = BuildLegend();
+            Grid.SetRow(legend, 1);
+
+            Grid.SetRow(stressChart, 2);
+            Grid.SetRow(marginChart, 3);
+
+            var footerBlock = new TextBlock
+            {
+                Text = footer,
+                FontSize = 12,
+                Foreground = s_textBrush,
+                Margin = new Thickness(4, 6, 4, 2),
+            };
+            Grid.SetRow(footerBlock, 4);
+
+            grid.Children.Add(titleBlock);
+            grid.Children.Add(legend);
+            grid.Children.Add(stressChart);
+            grid.Children.Add(marginChart);
+            grid.Children.Add(footerBlock);
+
+            Content = grid;
         }
 
         /// <summary>
-        /// Draws one gap's falling-order series (Distance is the in-gap running distance,
-        /// shifted by the gap's axis offset). Values are clamped to the panel max so the
-        /// near-zero withstand spike doesn't blow out the scale.
+        /// Builds a custom legend row (swatch + label per series) as plain Avalonia
+        /// controls. Living in its own layout row keeps it clear of the plot area and
+        /// gridlines, unlike LiveCharts' in-chart legend which overlapped the curves.
+        /// Entries mirror the stress chart's series colors / line styles.
         /// </summary>
-        private static void DrawGapSeries(
-            DrawingContext context, Func<double, double, Point> map,
-            double x0, IReadOnlyList<double> dist, IReadOnlyList<double> y, IPen pen, double yMax)
+        private static Control BuildLegend()
         {
-            int m = dist.Count;
-            if (m < 1) return;
-            var geo = new StreamGeometry();
-            using (var ctx = geo.Open())
+            var panel = new WrapPanel
             {
-                bool started = false;
-                for (int j = 0; j < m; j++)
+                Orientation = Orientation.Horizontal,
+                Margin = new Thickness(4, 0, 4, 6),
+            };
+
+            panel.Children.Add(LegendLine("E_falling", s_fallingColor, dashed: false));
+            panel.Children.Add(LegendLine("E_design (withstand)", s_designColor, dashed: true));
+            panel.Children.Add(LegendLine("E_average", s_avgColor, dashed: false));
+            panel.Children.Add(LegendLine("|E| (actual)", s_stressColor, dashed: false));
+            panel.Children.Add(LegendDot("Governing (min margin)", s_avgColor));
+
+            return panel;
+        }
+
+        private static Control LegendLine(string text, SKColor color, bool dashed)
+        {
+            var line = new Line
+            {
+                StartPoint = new Point(0, 5),
+                EndPoint = new Point(26, 5),
+                Stroke = ToBrush(color),
+                StrokeThickness = 2.5,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            if (dashed) line.StrokeDashArray = new AvaloniaList<double> { 3, 2 };
+
+            return LegendItem(line, text);
+        }
+
+        private static Control LegendDot(string text, SKColor color)
+        {
+            var dot = new Ellipse
+            {
+                Width = 11,
+                Height = 11,
+                Fill = ToBrush(color),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            return LegendItem(dot, text);
+        }
+
+        private static Control LegendItem(Control swatch, string text)
+        {
+            var sp = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Margin = new Thickness(0, 0, 16, 0),
+                Spacing = 6,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            sp.Children.Add(swatch);
+            sp.Children.Add(new TextBlock
+            {
+                Text = text,
+                FontSize = 13,
+                Foreground = s_textBrush,
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+            return sp;
+        }
+
+        private static IBrush ToBrush(SKColor c)
+            => new SolidColorBrush(Color.FromArgb(c.Alpha, c.Red, c.Green, c.Blue));
+
+        private static CartesianChart BuildStressChart(
+            StreamlineWithMargin s, IReadOnlyList<OilGapCumulativeMargin> gaps,
+            double[] gapX0, double xMax, double y1Max)
+        {
+            var fallingPaint = new SolidColorPaint(s_fallingColor) { StrokeThickness = 1f };
+            var designPaint = new SolidColorPaint(s_designColor)
+            {
+                StrokeThickness = 1.8f,
+                PathEffect = new DashEffect(new float[] { 6, 3 }),
+            };
+            var avgPaint = new SolidColorPaint(s_avgColor) { StrokeThickness = 2.2f };
+            var stressPaint = new SolidColorPaint(s_stressColor) { StrokeThickness = 1.6f };
+
+            // Governing-point markers sit on the average curve (clamped to the panel max).
+            var govPts = new List<ObservablePoint>(gaps.Count);
+            for (int gi = 0; gi < gaps.Count; gi++)
+                govPts.Add(new ObservablePoint(
+                    gapX0[gi] + gaps[gi].GoverningDistance,
+                    Math.Min(gaps[gi].GoverningEAverage, y1Max)));
+
+            // Draw order = legend/z order: faint falling first (background), then withstand,
+            // average, the actual |E| on top, and finally the governing markers.
+            var series = new List<ISeries>
+            {
+                Line("E_falling", GapPoints(gaps, gapX0, g => g.EFalling), fallingPaint),
+                Line("E_design (withstand)", GapPoints(gaps, gapX0, g => g.EDesign), designPaint),
+                Line("E_average", GapPoints(gaps, gapX0, g => g.EAverage), avgPaint),
+                Line("|E| (actual)", ActualFieldPoints(s.Points, gaps, gapX0), stressPaint),
+                new ScatterSeries<ObservablePoint>
                 {
-                    double v = y[j];
-                    if (double.IsNaN(v) || double.IsPositiveInfinity(v)) continue;
-                    if (v > yMax) v = yMax;
-                    var pt = map(x0 + dist[j], v);
-                    if (!started) { ctx.BeginFigure(pt, isFilled: false); started = true; }
-                    else ctx.LineTo(pt);
-                }
-                if (started) ctx.EndFigure(false);
+                    Name = "Governing (min margin)",
+                    Values = govPts,
+                    Fill = new SolidColorPaint(s_avgColor),
+                    Stroke = null,
+                    GeometrySize = 9,
+                },
+            };
+
+            return new CartesianChart
+            {
+                Series = series,
+                XAxes = new[] { ArcAxis(xMax, showTitle: false) },
+                YAxes = new[] { ValueAxis("Stress  (kV/mm)", 0, y1Max) },
+                Sections = GapSeparators(gaps, gapX0),
+                LegendPosition = LegendPosition.Hidden,
+                ZoomMode = ZoomAndPanMode.None,
+                DrawMargin = new LiveChartsCore.Measure.Margin(60, 8, 16, 8),
+            };
+        }
+
+        private static CartesianChart BuildMarginChart(
+            IReadOnlyList<OilGapCumulativeMargin> gaps, double[] gapX0, double xMax, double y2Max)
+        {
+            var marginPaint = new SolidColorPaint(new SKColor(70, 70, 70)) { StrokeThickness = 2f };
+
+            var govPts = new List<ObservablePoint>(gaps.Count);
+            var govPaints = new List<SKColor>(gaps.Count);
+            for (int gi = 0; gi < gaps.Count; gi++)
+            {
+                govPts.Add(new ObservablePoint(
+                    gapX0[gi] + gaps[gi].GoverningDistance,
+                    Math.Min(gaps[gi].GoverningMargin, y2Max)));
+                govPaints.Add(MarginColor(gaps[gi].GoverningMargin));
             }
-            context.DrawGeometry(null, pen, geo);
+
+            var series = new List<ISeries>
+            {
+                Line("σ(d) = E_design / E_avg", GapPoints(gaps, gapX0, g => g.Margin), marginPaint),
+                new ScatterSeries<ObservablePoint>
+                {
+                    Name = "Governing (min margin)",
+                    Values = govPts,
+                    Fill = new SolidColorPaint(govPaints.Count > 0 ? govPaints[0] : s_limitColor),
+                    Stroke = null,
+                    GeometrySize = 9,
+                },
+            };
+
+            var sections = GapSeparators(gaps, gapX0);
+            // Danger zone: σ < 1.0 means the average stress meets or exceeds the withstand.
+            sections.Add(new RectangularSection
+            {
+                Yi = 0,
+                Yj = 1.0,
+                Fill = new SolidColorPaint(new SKColor(210, 40, 40, 26)),
+            });
+            // 1.0 limit line with label.
+            sections.Add(new RectangularSection
+            {
+                Yi = 1.0,
+                Yj = 1.0,
+                Stroke = new SolidColorPaint(s_limitColor)
+                {
+                    StrokeThickness = 1.4f,
+                    PathEffect = new DashEffect(new float[] { 4, 3 }),
+                },
+                Label = "1.0 (limit)",
+                LabelPaint = new SolidColorPaint(s_limitColor),
+                LabelSize = 11,
+            });
+
+            return new CartesianChart
+            {
+                Series = series,
+                XAxes = new[] { ArcAxis(xMax, showTitle: true) },
+                YAxes = new[] { ValueAxis("Safety margin  σ(d)", 0, y2Max) },
+                Sections = sections,
+                LegendPosition = LegendPosition.Hidden,
+                ZoomMode = ZoomAndPanMode.None,
+                DrawMargin = new LiveChartsCore.Measure.Margin(60, 8, 16, 8),
+            };
+        }
+
+        // --- series / axis / section builders ---
+
+        private static LineSeries<ObservablePoint> Line(string name, IReadOnlyCollection<ObservablePoint> values, SolidColorPaint stroke)
+            => new()
+            {
+                Name = name,
+                Values = values,
+                Stroke = stroke,
+                Fill = null,
+                GeometrySize = 0,
+                GeometryStroke = null,
+                GeometryFill = null,
+                LineSmoothness = 0,
+            };
+
+        private static Axis ArcAxis(double xMax, bool showTitle)
+            => new()
+            {
+                Name = showTitle ? "Arc length (mm)" : null,
+                NamePaint = showTitle ? new SolidColorPaint(s_axisColor) : null,
+                NameTextSize = 12,
+                LabelsPaint = new SolidColorPaint(s_axisColor),
+                TextSize = 11,
+                MinLimit = 0,
+                MaxLimit = xMax,
+                SeparatorsPaint = new SolidColorPaint(s_gridColor) { StrokeThickness = 1f },
+            };
+
+        private static Axis ValueAxis(string name, double min, double max)
+            => new()
+            {
+                Name = name,
+                NamePaint = new SolidColorPaint(s_axisColor),
+                NameTextSize = 12,
+                LabelsPaint = new SolidColorPaint(s_axisColor),
+                TextSize = 11,
+                MinLimit = min,
+                MaxLimit = max,
+                SeparatorsPaint = new SolidColorPaint(s_gridColor) { StrokeThickness = 1f },
+            };
+
+        private static List<RectangularSection> GapSeparators(IReadOnlyList<OilGapCumulativeMargin> gaps, double[] gapX0)
+        {
+            var list = new List<RectangularSection>();
+            for (int gi = 1; gi < gaps.Count; gi++)
+            {
+                double sx = gapX0[gi] - GapPad * 0.5;
+                list.Add(new RectangularSection
+                {
+                    Xi = sx,
+                    Xj = sx,
+                    Stroke = new SolidColorPaint(s_sepColor)
+                    {
+                        StrokeThickness = 1f,
+                        PathEffect = new DashEffect(new float[] { 2, 3 }),
+                    },
+                });
+            }
+            return list;
+        }
+
+        /// <summary>
+        /// Builds one X-Y series from a per-gap falling-order array (Distance is the in-gap
+        /// running distance, shifted by each gap's axis offset). Gaps are separated by a
+        /// null point so the line breaks between them; NaN/∞ samples also break the line.
+        /// </summary>
+        private static List<ObservablePoint> GapPoints(
+            IReadOnlyList<OilGapCumulativeMargin> gaps, double[] gapX0,
+            Func<OilGapCumulativeMargin, IReadOnlyList<double>> select)
+        {
+            var list = new List<ObservablePoint>();
+            for (int gi = 0; gi < gaps.Count; gi++)
+            {
+                if (gi > 0) list.Add(new ObservablePoint(null, null));
+                var g = gaps[gi];
+                var ys = select(g);
+                double x0 = gapX0[gi];
+                for (int j = 0; j < g.Distance.Count; j++)
+                {
+                    double v = ys[j];
+                    if (double.IsNaN(v) || double.IsInfinity(v))
+                    {
+                        list.Add(new ObservablePoint(null, null));
+                        continue;
+                    }
+                    list.Add(new ObservablePoint(x0 + g.Distance[j], v));
+                }
+            }
+            return list;
         }
 
         /// <summary>
@@ -237,220 +470,102 @@ namespace electrostat_UI.Views
         /// axis span, so the real, un-sorted field is visible alongside the falling /
         /// average / withstand curves of the cumulative method.
         /// </summary>
-        private static void DrawActualFieldPerGap(
-            DrawingContext context, Func<double, double, Point> map,
+        private static List<ObservablePoint> ActualFieldPoints(
             IReadOnlyList<StreamlineMarginPoint> pts,
-            IReadOnlyList<OilGapCumulativeMargin> gaps,
-            double[] gapX0, double yMax, IPen pen)
+            IReadOnlyList<OilGapCumulativeMargin> gaps, double[] gapX0)
         {
+            var list = new List<ObservablePoint>();
             int n = pts.Count;
             for (int gi = 0; gi < gaps.Count; gi++)
             {
                 var g = gaps[gi];
-                // Authoritative physical point span recorded by the calculator.
                 int start = g.PointStart;
                 int end = Math.Min(g.PointEnd, n);
                 if (end - start < 2) continue;
 
+                if (list.Count > 0) list.Add(new ObservablePoint(null, null));
                 double x0 = gapX0[gi];
                 double run = 0;
-                var geo = new StreamGeometry();
-                using (var ctx = geo.Open())
+                list.Add(new ObservablePoint(x0, pts[start].EMagnitude));
+                for (int k = start + 1; k < end; k++)
                 {
-                    double vy = Math.Min(pts[start].EMagnitude, yMax);
-                    ctx.BeginFigure(map(x0, vy), isFilled: false);
-                    for (int k = start + 1; k < end; k++)
-                    {
-                        double dx = pts[k].X - pts[k - 1].X;
-                        double dy = pts[k].Y - pts[k - 1].Y;
-                        run += Math.Sqrt(dx * dx + dy * dy);
-                        ctx.LineTo(map(x0 + run, Math.Min(pts[k].EMagnitude, yMax)));
-                    }
-                    ctx.EndFigure(false);
+                    double dx = pts[k].X - pts[k - 1].X;
+                    double dy = pts[k].Y - pts[k - 1].Y;
+                    run += Math.Sqrt(dx * dx + dy * dy);
+                    list.Add(new ObservablePoint(x0 + run, pts[k].EMagnitude));
                 }
-                context.DrawGeometry(null, pen, geo);
             }
+            return list;
         }
 
         /// <summary>
-        /// Draws the panel frame, gridlines, ticks, axis labels and panel title,
-        /// returning the inner plotting rectangle and a data→screen mapping function.
+        /// Maps a safety margin to a green→red marker color: margin 1.0 (at the limit) → red,
+        /// margin ≥ 2 → toward green, +∞ (no constraint) → green.
         /// </summary>
-        private Rect DrawAxes(
-            DrawingContext context, Rect outer, string panelTitle,
-            double xMin, double xMax, double yMin, double yMax,
-            bool showXTitle, out Func<double, double, Point> map)
+        private static SKColor MarginColor(double margin)
         {
-            const double padLeft = 60;
-            const double padRight = 16;
-            const double padTop = 22;
-            double padBottom = showXTitle ? 38 : 26;
-
-            var inner = new Rect(
-                outer.X + padLeft,
-                outer.Y + padTop,
-                Math.Max(outer.Width - padLeft - padRight, 1),
-                Math.Max(outer.Height - padTop - padBottom, 1));
-
-            double xSpan = xMax - xMin; if (xSpan <= 0) xSpan = 1;
-            double ySpan = yMax - yMin; if (ySpan <= 0) ySpan = 1;
-
-            Point M(double x, double y) => new(
-                inner.X + (x - xMin) / xSpan * inner.Width,
-                inner.Bottom - (y - yMin) / ySpan * inner.Height);
-            map = M;
-
-            // Panel title.
-            DrawText(context, panelTitle, new Point(outer.X + padLeft, outer.Y + 2), 12, s_axisBrush, bold: true);
-
-            var gridPen = new Pen(s_gridBrush, 1);
-            var axisPen = new Pen(s_axisBrush, 1.2);
-
-            // Y gridlines + labels.
-            foreach (double yt in Ticks(yMin, yMax, 5))
-            {
-                var a = M(xMin, yt);
-                var b = M(xMax, yt);
-                context.DrawLine(gridPen, a, b);
-                string lbl = FormatTick(yt, yMax);
-                var ft = MakeText(lbl, 11, s_axisBrush);
-                context.DrawText(ft, new Point(inner.X - 6 - ft.Width, a.Y - ft.Height / 2));
-            }
-
-            // X gridlines + labels.
-            foreach (double xt in Ticks(xMin, xMax, 6))
-            {
-                var a = M(xt, yMin);
-                var b = M(xt, yMax);
-                context.DrawLine(gridPen, a, b);
-                string lbl = FormatTick(xt, xMax);
-                var ft = MakeText(lbl, 11, s_axisBrush);
-                context.DrawText(ft, new Point(a.X - ft.Width / 2, inner.Bottom + 4));
-            }
-
-            // Frame.
-            context.DrawRectangle(null, axisPen, inner);
-
-            if (showXTitle)
-            {
-                var ft = MakeText("Arc length (mm)", 12, s_axisBrush);
-                context.DrawText(ft, new Point(inner.X + (inner.Width - ft.Width) / 2, inner.Bottom + 18));
-            }
-
-            return inner;
-        }
-
-        /// <summary>
-        /// Draws one gap's cumulative safety-margin curve (falling-order, in-gap distance
-        /// shifted by the gap's axis offset) with a green→red ramp keyed to severity
-        /// (1/margin), so a small margin reads red. Values are clamped to the panel max.
-        /// </summary>
-        private static void DrawColoredMarginGap(
-            DrawingContext context, Func<double, double, Point> map,
-            double x0, IReadOnlyList<double> dist, IReadOnlyList<double> margin, double yMax)
-        {
-            const int kBuckets = 24;
-            var pens = new Pen[kBuckets + 1];
-            Pen GetPen(double sev)
-            {
-                if (double.IsNaN(sev) || sev < 0) sev = 0;
-                if (sev > 1) sev = 1;
-                int b = (int)Math.Round(sev * kBuckets);
-                return pens[b] ??= new Pen(new SolidColorBrush(MarginColor(b / (double)kBuckets)), 2.0);
-            }
-
-            double Clamp(double v) => double.IsPositiveInfinity(v) || double.IsNaN(v) ? yMax : Math.Min(v, yMax);
-
-            for (int i = 1; i < dist.Count; i++)
-            {
-                double sev = 0.5 * (MarginSeverity(margin[i - 1]) + MarginSeverity(margin[i]));
-                context.DrawLine(GetPen(sev),
-                    map(x0 + dist[i - 1], Clamp(margin[i - 1])),
-                    map(x0 + dist[i], Clamp(margin[i])));
-            }
-        }
-
-        /// <summary>
-        /// Maps a safety margin to a 0..1 severity for color-mapping: severity = 1/margin,
-        /// clamped to [0, 1]. Margin 1.0 (at the limit) → 1.0 (red); margin ≥ 2 → ≤ 0.5;
-        /// +∞ (no constraint) → 0 (green).
-        /// </summary>
-        private static double MarginSeverity(double margin)
-        {
-            if (double.IsPositiveInfinity(margin) || double.IsNaN(margin) || margin <= 0) return 0;
-            double sev = 1.0 / margin;
-            return sev > 1 ? 1 : sev;
-        }
-
-        /// <summary>Green → yellow → red ramp for stress severity (0 = safe, 1 = at/over the limit).</summary>
-        private static Color MarginColor(double t)
-        {
-            if (t < 0) t = 0; else if (t > 1) t = 1;
+            double sev = (double.IsInfinity(margin) || double.IsNaN(margin) || margin <= 0)
+                ? 0
+                : Math.Min(1.0, 1.0 / margin);
             byte r, g;
-            if (t < 0.5)
+            if (sev < 0.5)
             {
-                double u = t / 0.5;
+                double u = sev / 0.5;
                 r = (byte)Math.Round(255 * u);
                 g = 180;
             }
             else
             {
-                double u = (t - 0.5) / 0.5;
+                double u = (sev - 0.5) / 0.5;
                 r = 255;
                 g = (byte)Math.Round(180 * (1 - u));
             }
-            return Color.FromArgb(255, r, g, 30);
+            return new SKColor(r, g, 30);
         }
 
-        // --- small text / tick helpers ---
+        // --- fallback message layouts ---
 
-        private FormattedText MakeText(string text, double size, IBrush brush, bool bold = false)
+        private static Control CenteredMessage(string text)
+            => new TextBlock
+            {
+                Text = text,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                FontSize = 14,
+                Foreground = s_textBrush,
+            };
+
+        private static Control TitledMessage(string title, string message)
         {
-            var typeface = bold
-                ? new Typeface(FontFamily.Default, FontStyle.Normal, FontWeight.SemiBold)
-                : Typeface.Default;
-            return new FormattedText(text, CultureInfo.CurrentCulture,
-                FlowDirection.LeftToRight, typeface, size, brush);
-        }
+            var grid = new Grid
+            {
+                Margin = new Thickness(8),
+                RowDefinitions = new RowDefinitions("Auto,*"),
+            };
 
-        private void DrawText(DrawingContext context, string text, Point at, double size, IBrush brush, bool bold = false)
-            => context.DrawText(MakeText(text, size, brush, bold), at);
+            var titleBlock = new TextBlock
+            {
+                Text = title,
+                FontWeight = FontWeight.SemiBold,
+                FontSize = 15,
+                Foreground = s_textBrush,
+                Margin = new Thickness(4, 2, 4, 6),
+            };
+            Grid.SetRow(titleBlock, 0);
 
-        private void DrawCenteredText(DrawingContext context, string text, IBrush brush)
-        {
-            var ft = MakeText(text, 14, brush);
-            context.DrawText(ft, new Point((Bounds.Width - ft.Width) / 2, (Bounds.Height - ft.Height) / 2));
-        }
+            var messageBlock = new TextBlock
+            {
+                Text = message,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                FontSize = 14,
+                Foreground = s_textBrush,
+            };
+            Grid.SetRow(messageBlock, 1);
 
-        private static string FormatTick(double v, double range)
-        {
-            double a = Math.Abs(range);
-            if (a >= 100) return v.ToString("F0", CultureInfo.CurrentCulture);
-            if (a >= 10) return v.ToString("F1", CultureInfo.CurrentCulture);
-            return v.ToString("F2", CultureInfo.CurrentCulture);
-        }
-
-        /// <summary>Generates "nice" axis tick values spanning [min, max].</summary>
-        private static IEnumerable<double> Ticks(double min, double max, int target)
-        {
-            if (!(max > min)) { yield return min; yield break; }
-            double span = NiceNum(max - min, false);
-            double step = NiceNum(span / Math.Max(target - 1, 1), true);
-            double start = Math.Ceiling(min / step) * step;
-            for (double t = start; t <= max + step * 0.5; t += step)
-                yield return Math.Abs(t) < step * 1e-6 ? 0 : t;
-        }
-
-        private static double NiceNum(double range, bool round)
-        {
-            double exp = Math.Floor(Math.Log10(range));
-            double f = range / Math.Pow(10, exp);
-            double nf;
-            if (round)
-                nf = f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10;
-            else
-                nf = f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10;
-            return nf * Math.Pow(10, exp);
+            grid.Children.Add(titleBlock);
+            grid.Children.Add(messageBlock);
+            return grid;
         }
     }
 }
