@@ -1,0 +1,26 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+			 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+			 xmlns:cvm="using:electrostat_UI.ViewModels.Components"
+			 xmlns:cviews="using:electrostat_UI.Views.Components"
+			 xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+			 xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+			 mc:Ignorable="d" d:DesignWidth="260" d:DesignHeight="320"
+			 x:Class="electrostat_UI.Views.Components.CutEditorView"
+			 x:DataType="cvm:CutViewModel">
+	<StackPanel Spacing="4">
+		<TextBlock Text="Cut" FontWeight="SemiBold"/>
+		<Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="4" ColumnSpacing="6">
+			<TextBlock Grid.Row="0" Grid.Column="0" Text="Name" VerticalAlignment="Center"/>
+			<TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Name, UpdateSourceTrigger=LostFocus}"/>
+			<TextBlock Grid.Row="1" Grid.Column="0" Text="Geometry" VerticalAlignment="Center"/>
+			<ComboBox Grid.Row="1" Grid.Column="1" HorizontalAlignment="Stretch"
+					  ItemsSource="{Binding AvailableGeometryTypes}"
+					  SelectedItem="{Binding GeometryType, Mode=TwoWay}"/>
+			<CheckBox Grid.Row="2" Grid.Column="1" Content="Include adjacent phase"
+					  IsChecked="{Binding IncludeAdjacentPhase, Mode=TwoWay}"/>
+		</Grid>
+		<TextBlock Text="A planar geometry type with the adjacent phase included models the inter-phase region between two legs."
+				   FontStyle="Italic" FontSize="11" Foreground="Gray" TextWrapping="Wrap"/>
+		<cviews:DomainEditorView DataContext="{Binding Domain}" Margin="0,6,0,0"/>
+	</StackPanel>
+</UserControl>

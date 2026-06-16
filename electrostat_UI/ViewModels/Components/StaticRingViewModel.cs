@@ -32,7 +32,7 @@ namespace electrostat_UI.ViewModels.Components
 
         /// <summary>
         /// Candidate winding names for the parent picker, including <see cref="NoneWinding"/>.
-        /// The owning <c>ElectrostatCaseViewModel</c> keeps this in sync with the case's
+        /// The owning <c>TransformerViewModel</c> keeps this in sync with the transformer's
         /// windings and shares one instance across every ring.
         /// </summary>
         [ObservableProperty] private ObservableCollection<string> _availableWindings = new() { NoneWinding };

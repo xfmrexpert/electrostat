@@ -414,6 +414,11 @@ namespace electrostat
             var geometry = new Geometry();
             var mfemProblem = new MFEMProblem();
 
+            // Carry the case's coordinate system through to the solver. The mesh / geometry
+            // is identical across geometry types (only this flag varies per cut), so the
+            // same build feeds an axisymmetric (r–z) or planar solve unchanged.
+            mfemProblem.GeometryType = _case.GeometryType;
+
             var ctx = new BuildContext
             {
                 Case = _case,

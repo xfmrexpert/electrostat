@@ -11,20 +11,24 @@ namespace electrostat
 
             foreach (bool withLVCornerAngle in new[] { true })
             {
-                foreach (var ex in Examples.All(withLVCornerAngle))
+                foreach (var tx in Examples.All(withLVCornerAngle))
                 {
-                    System.Console.WriteLine($"\n=== Building {ex.Name} ===");
+                    foreach (var cut in tx.Cuts)
+                    {
+                        var ex = tx.ResolveCut(cut);
+                        System.Console.WriteLine($"\n=== Building {tx.Name} / {cut.Name} ===");
 
-                    string caseName = SafeName(ex.Name);
-                    if (!withLVCornerAngle) caseName += "/noLVcorner";
+                        string caseName = SafeName(tx.Name) + "/" + SafeName(cut.Name);
+                        if (!withLVCornerAngle) caseName += "/noLVcorner";
 
-                    var model = GeometryBuilder.BuildModel(
-                        ex,
-                        lc: 5.0,
-                        mshOut: $"{caseName}/geom.msh",
-                        clipToDomain: true);
-                    model.Solve();
-                    return;
+                        var model = GeometryBuilder.BuildModel(
+                            ex,
+                            lc: 5.0,
+                            mshOut: $"{caseName}/geom.msh",
+                            clipToDomain: true);
+                        model.Solve();
+                        return;
+                    }
                 }
             }
 

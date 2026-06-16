@@ -11,22 +11,38 @@ using electrostat_UI.ViewModels.Components;
 namespace electrostat_UI.ViewModels
 {
     /// <summary>
-    /// Editable view-model for an <see cref="ElectrostatCase"/>. Wraps each component
-    /// in an observable VM and raises <see cref="Changed"/> whenever any nested
-    /// property mutates so the view can rebuild the geometry.
+    /// Editable view-model for a <see cref="Transformer"/>. Owns the components shared by
+    /// every cut (windings + nested static rings, pressboards, angle rings), the interphase
+    /// insulation, the core/window dimensions, the base voltages and scenarios, and the list
+    /// of <see cref="Cuts"/>. Raises <see cref="Changed"/> whenever any nested property
+    /// mutates so the view can rebuild the geometry for the active cut.
     /// </summary>
-    public partial class ElectrostatCaseViewModel : ObservableObject
+    public partial class TransformerViewModel : ObservableObject
     {
         [ObservableProperty] private string _name;
 
-        public DomainViewModel Domain { get; }
+        /// <summary>Core leg radius (mm); half the spacing term used to mirror the adjacent phase.</summary>
+        [ObservableProperty] private double _coreLegRadius;
+
+        /// <summary>Core window width (mm) between adjacent legs.</summary>
+        [ObservableProperty] private double _windowWidth;
+
         public ObservableCollection<WindingViewModel> Windings { get; } = new();
         public ObservableCollection<PressboardViewModel> Pressboards { get; } = new();
         public ObservableCollection<AngleRingViewModel> AngleRings { get; } = new();
         public ObservableCollection<StaticRingViewModel> StaticRings { get; } = new();
 
+        /// <summary>Pressboard barriers added only when a cut models the adjacent phase.</summary>
+        public ObservableCollection<PressboardViewModel> InterphaseBarriers { get; } = new();
+
+        /// <summary>Angle rings added only when a cut models the adjacent phase.</summary>
+        public ObservableCollection<AngleRingViewModel> InterphaseAngleRings { get; } = new();
+
+        /// <summary>The slices of this transformer's geometry to build / solve.</summary>
+        public ObservableCollection<CutViewModel> Cuts { get; } = new();
+
         /// <summary>
-        /// Voltage permutations solved together for this case. Empty means a single solve
+        /// Voltage permutations solved together for each cut. Empty means a single solve
         /// using the base <see cref="Voltages"/> + per-component voltages.
         /// </summary>
         public ObservableCollection<VoltageScenarioViewModel> Scenarios { get; } = new();
@@ -40,20 +56,21 @@ namespace electrostat_UI.ViewModels
 
         public Dictionary<string, double> Voltages { get; }
 
-        /// <summary>Raised whenever the case changes structurally or any field mutates.</summary>
+        /// <summary>Raised whenever the transformer changes structurally or any field mutates.</summary>
         public event Action? Changed;
 
         /// <summary>
-        /// Raised only when the case's tree structure or a node label changes (add / remove /
+        /// Raised only when the tree structure or a node label changes (add / remove /
         /// rename / re-parent). The case explorer is rebuilt for these edits but left intact
         /// for pure value edits, so its expansion and selection survive routine editing.
         /// </summary>
         public event Action? StructureChanged;
 
-        public ElectrostatCaseViewModel(ElectrostatCase model)
+        public TransformerViewModel(Transformer model)
         {
             _name = model.Name;
-            Domain = new DomainViewModel(model.Domain);
+            _coreLegRadius = model.CoreLegRadius;
+            _windowWidth = model.WindowWidth;
             Voltages = new Dictionary<string, double>(model.Voltages);
 
             foreach (var w in model.Windings)
@@ -68,6 +85,15 @@ namespace electrostat_UI.ViewModels
             foreach (var sr in model.StaticRings)
                 StaticRings.Add(new StaticRingViewModel(sr, GetVoltage(model.Voltages, sr.Name + "_Metal")));
 
+            foreach (var pb in model.InterphaseBarriers)
+                InterphaseBarriers.Add(new PressboardViewModel(pb));
+
+            foreach (var ar in model.InterphaseAngleRings)
+                InterphaseAngleRings.Add(new AngleRingViewModel(ar));
+
+            foreach (var cut in model.Cuts)
+                Cuts.Add(new CutViewModel(cut));
+
             // Seed the shared winding-name list and hand it to each ring's parent picker.
             SyncAvailableWindings();
             foreach (var sr in StaticRings)
@@ -80,11 +106,13 @@ namespace electrostat_UI.ViewModels
                     Scenarios.Add(new VoltageScenarioViewModel(sc, windingNames));
             }
 
-            Hook(Domain);
             HookCollection(Windings);
             HookCollection(Pressboards);
             HookCollection(AngleRings);
             HookCollection(StaticRings);
+            HookCollection(InterphaseBarriers);
+            HookCollection(InterphaseAngleRings);
+            HookCutCollection(Cuts);
             HookScenarioCollection(Scenarios);
 
             // Keep the shared winding-name list current as windings are added / removed,
@@ -133,6 +161,36 @@ namespace electrostat_UI.ViewModels
 
             foreach (var sc in Scenarios)
                 sc.SyncWindings(names);
+        }
+
+        private void HookCutCollection(ObservableCollection<CutViewModel> coll)
+        {
+            foreach (var cut in coll) HookCut(cut);
+            coll.CollectionChanged += (_, e) =>
+            {
+                if (e.NewItems != null)
+                    foreach (CutViewModel cut in e.NewItems) HookCut(cut);
+                if (e.OldItems != null)
+                    foreach (CutViewModel cut in e.OldItems) UnhookCut(cut);
+                // Adding / removing a cut changes the tree; rebuild the explorer.
+                RaiseStructureChanged();
+                RaiseChanged();
+            };
+        }
+
+        private void HookCut(CutViewModel cut)
+        {
+            cut.PropertyChanged -= ItemChanged;
+            cut.PropertyChanged += ItemChanged;
+            // A cut's domain edits drive the geometry preview for that cut.
+            cut.Domain.PropertyChanged -= ItemChanged;
+            cut.Domain.PropertyChanged += ItemChanged;
+        }
+
+        private void UnhookCut(CutViewModel cut)
+        {
+            cut.PropertyChanged -= ItemChanged;
+            cut.Domain.PropertyChanged -= ItemChanged;
         }
 
         private void HookScenarioCollection(ObservableCollection<VoltageScenarioViewModel> coll)
@@ -217,10 +275,13 @@ namespace electrostat_UI.ViewModels
 
             // A rename changes a tree node's label, and re-parenting a static ring moves it
             // between its parent winding and the top-level group; both alter the tree and so
-            // need a structural refresh. Everything else is a pure value edit that only the
-            // geometry cares about, so the case explorer is left untouched.
+            // need a structural refresh. Toggling a cut's adjacent-phase flag changes which
+            // components are generated, so the explorer's worth refreshing too. Everything
+            // else is a pure value edit that only the geometry cares about, so the case
+            // explorer is left untouched.
             if (e.PropertyName == nameof(ComponentViewModel.Name) ||
-                (sender is StaticRingViewModel && e.PropertyName == nameof(StaticRingViewModel.ParentWinding)))
+                (sender is StaticRingViewModel && e.PropertyName == nameof(StaticRingViewModel.ParentWinding)) ||
+                (sender is CutViewModel && e.PropertyName == nameof(CutViewModel.IncludeAdjacentPhase)))
             {
                 RaiseStructureChanged();
             }
@@ -230,25 +291,29 @@ namespace electrostat_UI.ViewModels
 
         partial void OnNameChanged(string value)
         {
-            // The case name is the tree's root label.
+            // The transformer name is the tree's root label.
             RaiseStructureChanged();
             RaiseChanged();
         }
+
+        partial void OnCoreLegRadiusChanged(double value) => RaiseChanged();
+
+        partial void OnWindowWidthChanged(double value) => RaiseChanged();
 
         private void RaiseChanged() => Changed?.Invoke();
 
         private void RaiseStructureChanged() => StructureChanged?.Invoke();
 
-        public ElectrostatCase ToModel()
+        /// <summary>
+        /// Build the base electrode voltage map: start from <see cref="Voltages"/>, overlay
+        /// each winding's current per-winding voltage, then each static ring's metal voltage
+        /// (inherited rings follow their parent winding; independent rings use their own).
+        /// </summary>
+        private Dictionary<string, double> BuildVoltages()
         {
-            // Rebuild voltages dictionary, preserving voltages and applying per-component edits.
             var voltages = new Dictionary<string, double>(Voltages);
             foreach (var w in Windings) voltages[w.Name] = w.Voltage;
 
-            // A nested ring's metal voltage follows its parent winding; an independent ring
-            // uses its own Voltage. (The solver re-derives this per scenario via
-            // ElectrostatCase.EffectiveVoltages, but seeding the base map keeps a single
-            // no-scenario build consistent too.)
             var windingByName = Windings.ToDictionary(w => w.Name, w => w.Voltage);
             foreach (var sr in StaticRings)
             {
@@ -257,20 +322,34 @@ namespace electrostat_UI.ViewModels
                     metalV = pv;
                 voltages[sr.Name + "_Metal"] = metalV;
             }
+            return voltages;
+        }
 
+        public Transformer ToModel()
+        {
             var scenarios = Scenarios.Count > 0
                 ? Scenarios.Select(s => s.ToModel()).ToList()
                 : null;
 
-            return new ElectrostatCase(
+            return new Transformer(
                 Name,
-                Domain.ToModel(),
+                CoreLegRadius,
+                WindowWidth,
                 Windings.Select(w => w.ToModel()).ToList(),
                 Pressboards.Select(p => p.ToModel()).ToList(),
                 AngleRings.Select(a => a.ToModel()).ToList(),
                 StaticRings.Select(s => s.ToModel()).ToList(),
-                voltages,
-                scenarios);
+                InterphaseBarriers.Select(p => p.ToModel()).ToList(),
+                InterphaseAngleRings.Select(a => a.ToModel()).ToList(),
+                BuildVoltages(),
+                scenarios,
+                Cuts.Select(c => c.ToModel()).ToList());
         }
+
+        /// <summary>
+        /// Flatten this transformer for a single cut into the <see cref="ElectrostatCase"/>
+        /// the geometry builder / solver consume.
+        /// </summary>
+        public ElectrostatCase ResolveCut(CutViewModel cut) => ToModel().ResolveCut(cut.ToModel());
     }
 }

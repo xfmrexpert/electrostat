@@ -1,3 +1,5 @@
+using TfmrLib.FEM;
+
 namespace electrostat
 {
     /// <summary>
@@ -21,6 +23,11 @@ namespace electrostat
     /// Optional list of voltage permutations to solve for this case. When null or empty
     /// the case is solved once using <paramref name="Voltages"/> as-is.
     /// </param>
+    /// <param name="GeometryType">
+    /// Coordinate system the MFEM solver should assume for this case. Defaults to
+    /// <see cref="GeometryType.Axisymmetric"/> (r–z) since the geometry models a
+    /// cylindrical transformer; a two-phase window cut is solved as <see cref="GeometryType.Planar"/>.
+    /// </param>
     public sealed record ElectrostatCase(
         string Name,
         Domain Domain,
@@ -29,7 +36,8 @@ namespace electrostat
         IReadOnlyList<AngleRing> AngleRings,
         IReadOnlyList<StaticRing> StaticRings,
         Dictionary<string, double> Voltages,
-        IReadOnlyList<VoltageScenario>? Scenarios = null)
+        IReadOnlyList<VoltageScenario>? Scenarios = null,
+        GeometryType GeometryType = GeometryType.Axisymmetric)
     {
         /// <summary>
         /// Resolve the full electrode voltage map for a given <paramref name="scenario"/>.
