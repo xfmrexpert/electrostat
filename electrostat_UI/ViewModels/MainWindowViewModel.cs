@@ -209,18 +209,10 @@ namespace electrostat_UI.ViewModels
 
             SelectedComponent = value?.Model;
 
-            // Selecting a cut (or its domain) makes that cut the active one for preview /
-            // single-cut solve.
-            switch (value?.Model)
-            {
-                case CutViewModel cut:
-                    SelectedCut = cut;
-                    break;
-                case Components.DomainViewModel dom
-                    when EditingTransformer?.Cuts.FirstOrDefault(c => ReferenceEquals(c.Domain, dom)) is { } owner:
-                    SelectedCut = owner;
-                    break;
-            }
+            // Selecting a cut makes that cut the active one for preview / single-cut solve.
+            // Its domain bounds are edited inline in the cut editor, so no separate node exists.
+            if (value?.Model is CutViewModel cut)
+                SelectedCut = cut;
 
             UpdateHighlight();
         }
@@ -470,15 +462,11 @@ namespace electrostat_UI.ViewModels
                 foreach (var x in tx.Scenarios) sc.Children.Add(new CaseTreeNode(x.Name, x));
                 root.Children.Add(sc);
 
-                // Cuts: each cut owns its own domain bounds, geometry type and phase mode, so
-                // its domain is nested directly beneath it.
+                // Cuts: each cut owns its own domain bounds, geometry type and phase mode.
+                // The domain bounds are edited inline in the cut editor, so the cut is a leaf.
                 var cutsGroup = new CaseTreeNode($"Cuts ({tx.Cuts.Count})", key: GroupCuts);
                 foreach (var cut in tx.Cuts)
-                {
-                    var cutNode = new CaseTreeNode(cut.Name, cut);
-                    cutNode.Children.Add(new CaseTreeNode("Domain", cut.Domain));
-                    cutsGroup.Children.Add(cutNode);
-                }
+                    cutsGroup.Children.Add(new CaseTreeNode(cut.Name, cut));
                 root.Children.Add(cutsGroup);
 
                 CaseTree.Add(root);
