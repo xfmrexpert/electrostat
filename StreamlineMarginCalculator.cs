@@ -200,11 +200,83 @@ namespace electrostat
 
                 // Step 1: falling function — rearrange the gap's field profile to be
                 // descending (max stress at d = 0). Sort sub-segments by |E| desc.
-                var order = new int[ds.Count];
-                for (int j = 0; j < order.Length; j++) order[j] = j;
-                Array.Sort(order, (x, y) => es[y].CompareTo(es[x]));
+                //var order = new int[ds.Count];
+                //for (int j = 0; j < order.Length; j++) order[j] = j;
+                //Array.Sort(order, (x, y) => es[y].CompareTo(es[x]));
 
+                // Step 1: Nelson's Contiguous Expansion
+                // Find the segment with the maximum local field to act as the seed.
                 int m = ds.Count;
+                var order = new int[m];
+                int maxIdx = 0;
+                double maxE = -1;
+                for (int j = 0; j < m; j++)
+                {
+                    if (es[j] > maxE)
+                    {
+                        maxE = es[j];
+                        maxIdx = j;
+                    }
+                }
+
+                // Initialize the growing contiguous region
+                int leftIdx = maxIdx;
+                int rightIdx = maxIdx;
+                order[0] = maxIdx;
+
+                double currentLength = ds[maxIdx];
+                double currentIntegral = es[maxIdx] * ds[maxIdx];
+
+                // Iteratively grow outward along the streamline path
+                for (int step = 1; step < m; step++)
+                {
+                    int candidateLeft = leftIdx - 1;
+                    int candidateRight = rightIdx + 1;
+
+                    bool canGoLeft = candidateLeft >= 0;
+                    bool canGoRight = candidateRight < m;
+
+                    int chosenIdx = -1;
+
+                    if (canGoLeft && !canGoRight)
+                    {
+                        chosenIdx = candidateLeft;
+                        leftIdx--;
+                    }
+                    else if (!canGoLeft && canGoRight)
+                    {
+                        chosenIdx = candidateRight;
+                        rightIdx++;
+                    }
+                    else
+                    {
+                        // Nelson Step (d): Examine cumulative stress in either direction
+                        // and choose the path extension yielding the higher cumulative stress.
+                        double stressIfLeft = (currentIntegral + es[candidateLeft] * ds[candidateLeft]) /
+                                              (currentLength + ds[candidateLeft]);
+
+                        double stressIfRight = (currentIntegral + es[candidateRight] * ds[candidateRight]) /
+                                               (currentLength + ds[candidateRight]);
+
+                        if (stressIfLeft >= stressIfRight)
+                        {
+                            chosenIdx = candidateLeft;
+                            leftIdx--;
+                        }
+                        else
+                        {
+                            chosenIdx = candidateRight;
+                            rightIdx++;
+                        }
+                    }
+
+                    // Commit the chosen step
+                    order[step] = chosenIdx;
+                    currentLength += ds[chosenIdx];
+                    currentIntegral += es[chosenIdx] * ds[chosenIdx];
+                }
+
+                m = ds.Count;
                 var dist = new double[m];
                 var eFalling = new double[m];
                 var eAverage = new double[m];
