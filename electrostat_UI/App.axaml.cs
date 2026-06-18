@@ -3,6 +3,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Data.Core;
 using Avalonia.Data.Core.Plugins;
 using Avalonia.Markup.Xaml;
+using electrostat_UI.Services;
 using electrostat_UI.ViewModels;
 using electrostat_UI.Views;
 using System.Linq;
@@ -20,10 +21,15 @@ namespace electrostat_UI
         {
             if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             {
-                desktop.MainWindow = new MainWindow
+                var window = new MainWindow();
+                var dialogService = new DialogService(window);
+                var viewModel = new MainWindowViewModel(dialogService)
                 {
-                    DataContext = new MainWindowViewModel(),
+                    RequestClose = () => window.Close(),
                 };
+
+                window.DataContext = viewModel;
+                desktop.MainWindow = window;
             }
 
             base.OnFrameworkInitializationCompleted();

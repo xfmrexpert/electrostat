@@ -8,6 +8,29 @@ using TfmrLib.FEM;
 namespace electrostat
 {
     /// <summary>
+    /// Semantic classification of a built <see cref="GeomSurface"/>, used by the geometry
+    /// view to color each region by what it physically represents (rather than cycling a
+    /// rotating palette by surface index).
+    /// </summary>
+    public enum SurfaceCategory
+    {
+        /// <summary>Unclassified surface; rendered with a neutral fallback fill.</summary>
+        Other = 0,
+        /// <summary>The outer oil/domain region.</summary>
+        Oil,
+        /// <summary>A winding conductor block.</summary>
+        Winding,
+        /// <summary>A pressboard barrier.</summary>
+        Pressboard,
+        /// <summary>An angle ring.</summary>
+        AngleRing,
+        /// <summary>The metal core of a static ring.</summary>
+        StaticRingMetal,
+        /// <summary>The paper wrap of a static ring.</summary>
+        StaticRingPaper,
+    }
+
+    /// <summary>
     /// Result of a single <see cref="GeometryBuilder"/> build. Owns the geometry, the FEM
     /// problem, and the lookup caches that used to live as mutable statics on
     /// <see cref="GeometryBuilder"/>. A fresh instance is produced per build, so successive
@@ -30,6 +53,15 @@ namespace electrostat
         /// highlight selected components in the geometry view.
         /// </summary>
         public Dictionary<string, List<GeomSurface>> ComponentSurfaces { get; init; } = new();
+
+        /// <summary>
+        /// Map from each built <see cref="GeomSurface"/> to its semantic
+        /// <see cref="SurfaceCategory"/>, so the geometry view can color regions by what
+        /// they physically represent (e.g. pressboard vs. static-ring paper) instead of by
+        /// a rotating index-based palette. Keyed by reference identity.
+        /// </summary>
+        public IReadOnlyDictionary<GeomSurface, SurfaceCategory> SurfaceCategories { get; init; } =
+            new Dictionary<GeomSurface, SurfaceCategory>(ReferenceEqualityComparer.Instance);
 
         /// <summary>
         /// Surfaces that act as electrodes (Dirichlet-V conductors): windings and

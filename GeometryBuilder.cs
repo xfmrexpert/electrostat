@@ -451,7 +451,38 @@ namespace electrostat
                 ComponentSurfaces = ctx.ComponentSurfaces,
                 ElectrodeSurfaces = ctx.ElectrodeSurfaces,
                 DirichletWallLoops = ctx.DirichletWallLoops,
+                SurfaceCategories = BuildSurfaceCategoryMap(ctx),
             };
+        }
+
+        /// <summary>
+        /// Map each built surface to a semantic <see cref="SurfaceCategory"/> so the UI can
+        /// color regions by what they represent. Includes the oil domain surface and every
+        /// component surface (keyed by reference identity, mirroring how the geometry view
+        /// receives the same surface instances).
+        /// </summary>
+        private static IReadOnlyDictionary<GeomSurface, SurfaceCategory> BuildSurfaceCategoryMap(BuildContext ctx)
+        {
+            var map = new Dictionary<GeomSurface, SurfaceCategory>(ReferenceEqualityComparer.Instance);
+
+            if (ctx.OilSurf != null)
+                map[ctx.OilSurf] = SurfaceCategory.Oil;
+
+            foreach (var (surf, _, kind) in ctx.Components)
+            {
+                if (surf == null) continue;
+                map[surf] = kind switch
+                {
+                    ComponentKind.Winding => SurfaceCategory.Winding,
+                    ComponentKind.Pressboard => SurfaceCategory.Pressboard,
+                    ComponentKind.AngleRing => SurfaceCategory.AngleRing,
+                    ComponentKind.StaticMetal => SurfaceCategory.StaticRingMetal,
+                    ComponentKind.StaticPaper => SurfaceCategory.StaticRingPaper,
+                    _ => SurfaceCategory.Other,
+                };
+            }
+
+            return map;
         }
 
         /// <summary>Create the three dielectric materials (oil, paper, pressboard) and register them on the problem.</summary>

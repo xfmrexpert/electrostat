@@ -22,6 +22,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include=".github\copilot-instructions.md" />
+    <None Include="tools\ExampleExporter\ExampleExporter.csproj" />
     <None Include="tools\StreamlineSmokeTest\StreamlineSmokeTest.csproj" />
   </ItemGroup>
 

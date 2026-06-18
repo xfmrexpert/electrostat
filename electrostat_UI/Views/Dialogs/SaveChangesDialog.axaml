@@ -1,0 +1,21 @@
+<Window xmlns="https://github.com/avaloniaui"
+		xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+		xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+		xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+		mc:Ignorable="d"
+		x:Class="electrostat_UI.Views.Dialogs.SaveChangesDialog"
+		Title="electrostat"
+		Width="380" SizeToContent="Height"
+		WindowStartupLocation="CenterOwner"
+		CanResize="False"
+		ShowInTaskbar="False">
+	<StackPanel Margin="16" Spacing="16">
+		<TextBlock Text="Do you want to save changes to the current case?"
+				   TextWrapping="Wrap"/>
+		<StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+			<Button x:Name="SaveButton" Content="_Save" MinWidth="90" IsDefault="True"/>
+			<Button x:Name="DiscardButton" Content="Do_n't Save" MinWidth="90"/>
+			<Button x:Name="CancelButton" Content="_Cancel" MinWidth="90" IsCancel="True"/>
+		</StackPanel>
+	</StackPanel>
+</Window>

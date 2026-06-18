@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json.Serialization;
 
 namespace electrostat
 {
@@ -40,6 +41,7 @@ namespace electrostat
         /// about the window centerline at <c>value/2 = CoreLegRadius + WindowWidth/2</c>.
         /// Equals the legacy <c>rAdjphCL</c> = 2·CoreLegRadius + WindowWidth.
         /// </summary>
+        [JsonIgnore]
         public double AdjacentPhaseMirror => 2.0 * CoreLegRadius + WindowWidth;
 
         /// <summary>

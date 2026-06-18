@@ -10,7 +10,7 @@
         x:Class="electrostat_UI.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Icon="/Assets/avalonia-logo.ico"
-        Title="electrostat_UI">
+        Title="{Binding WindowTitle}">
 
     <Design.DataContext>
         <vm:MainWindowViewModel/>
@@ -61,10 +61,16 @@
         </DataTemplate>
     </Window.DataTemplates>
 
-    <Grid RowDefinitions="Auto,*,Auto" ColumnDefinitions="280,*">
-        <Menu Grid.Row="0" Grid.ColumnSpan="2">
+    <Grid RowDefinitions="Auto,*,Auto">
+        <Menu Grid.Row="0">
             <MenuItem Header="_File">
-                <MenuItem Header="_Transformers"
+                <MenuItem Header="_New" Command="{Binding NewCommand}" HotKey="Ctrl+N" InputGesture="Ctrl+N"/>
+                <MenuItem Header="_Open..." Command="{Binding OpenCommand}" HotKey="Ctrl+O" InputGesture="Ctrl+O"/>
+                <Separator/>
+                <MenuItem Header="_Save" Command="{Binding SaveCommand}" HotKey="Ctrl+S" InputGesture="Ctrl+S"/>
+                <MenuItem Header="Save _As..." Command="{Binding SaveAsCommand}" HotKey="Ctrl+Shift+S" InputGesture="Ctrl+Shift+S"/>
+                <Separator/>
+                <MenuItem Header="_Examples"
                           ItemsSource="{Binding Examples}">
                     <MenuItem.ItemTemplate>
                         <DataTemplate>
@@ -74,13 +80,13 @@
                     <MenuItem.ItemContainerTheme>
                         <ControlTheme TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
                             <Setter Property="Command"
-                                    Value="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).SelectTransformerCommand}"/>
+                                    Value="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).OpenExampleCommand}"/>
                             <Setter Property="CommandParameter" Value="{Binding}"/>
                         </ControlTheme>
                     </MenuItem.ItemContainerTheme>
                 </MenuItem>
                 <Separator/>
-                <MenuItem Header="E_xit"/>
+                <MenuItem Header="E_xit" Command="{Binding ExitCommand}"/>
             </MenuItem>
             <MenuItem Header="_Edit">
                 <MenuItem Header="Add _Winding" Command="{Binding AddWindingCommand}"/>
@@ -98,235 +104,60 @@
             </MenuItem>
         </Menu>
 
-        <Grid Grid.Row="1" Grid.Column="0" Margin="8" RowDefinitions="Auto,2*,Auto,3*,Auto">
-            <TextBlock Grid.Row="0" Text="Case" FontWeight="SemiBold" Margin="0,0,0,4"/>
-            <TreeView Grid.Row="1"
-                      ItemsSource="{Binding CaseTree}"
-                      SelectedItem="{Binding SelectedTreeNode, Mode=TwoWay}">
-                <TreeView.Styles>
-                    <!-- Bind each container's expansion to the node so it survives rebuilds. -->
-                    <Style Selector="TreeViewItem" x:DataType="vm:CaseTreeNode">
-                        <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
-                    </Style>
-                </TreeView.Styles>
-                <TreeView.ItemTemplate>
-                    <TreeDataTemplate ItemsSource="{Binding Children}"
-                                      x:DataType="vm:CaseTreeNode">
-                        <TextBlock Text="{Binding Name}"/>
-                    </TreeDataTemplate>
-                </TreeView.ItemTemplate>
-            </TreeView>
-
-            <GridSplitter Grid.Row="2" Height="4" HorizontalAlignment="Stretch"
-                          Background="Transparent"/>
-
-            <Border Grid.Row="3" BorderBrush="Gray" BorderThickness="1" Padding="8">
-                <ScrollViewer>
-                    <ContentControl Content="{Binding SelectedComponent}"/>
-                </ScrollViewer>
-            </Border>
-
-            <ProgressBar Grid.Row="4" IsIndeterminate="True"
-                         IsVisible="{Binding IsSolving}"
-                         Height="6" Margin="0,6,0,0"/>
-        </Grid>
-
-        <Border Grid.Row="1" Grid.Column="1" Margin="8"
-                BorderBrush="Gray" BorderThickness="1">
-            <TabControl>
-                <TabItem Header="Geometry">
-                    <views:GeometryView Geometry="{Binding CurrentGeometry}"
-                                        HighlightedSurfaces="{Binding HighlightedSurfaces}"/>
-                </TabItem>
-                <TabItem Header="Results">
-                    <Grid RowDefinitions="Auto,*">
-                        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="12"
-                                    Margin="6,4">
-                            <TextBlock Text="Scenario:" VerticalAlignment="Center"/>
-                            <ComboBox ItemsSource="{Binding ScenarioResults}"
-                                      SelectedItem="{Binding SelectedScenarioResult, Mode=TwoWay}"
-                                      MinWidth="160">
-                                <ComboBox.ItemTemplate>
-                                    <DataTemplate x:DataType="vm:ScenarioResult">
-                                        <TextBlock Text="{Binding DisplayName}"/>
-                                    </DataTemplate>
-                                </ComboBox.ItemTemplate>
-                            </ComboBox>
-                            <TextBlock Text="Field:" VerticalAlignment="Center"/>
-                            <ComboBox ItemsSource="{Binding AvailableFields}"
-                                      SelectedItem="{Binding SelectedField, Mode=TwoWay}"
-                                      MinWidth="80"/>
-                            <CheckBox Content="Show mesh"
-                                      IsChecked="{Binding ShowResultsMesh, Mode=TwoWay}"/>
-                            <CheckBox Content="Show outlines"
-                                      IsChecked="{Binding ShowResultsOutlines, Mode=TwoWay}"/>
-                            <CheckBox Content="Show streamlines"
-                                      IsChecked="{Binding ShowStreamlines, Mode=TwoWay}"/>
-                        </StackPanel>
-                        <views:ResultsView Grid.Row="1"
-                                           Solution="{Binding CurrentSolution}"
-                                           FieldName="{Binding SelectedField}"
-                                           ShowMesh="{Binding ShowResultsMesh}"
-                                           Geometry="{Binding CurrentGeometry}"
-                                           ShowGeometryOutlines="{Binding ShowResultsOutlines}"
-                                           Streamlines="{Binding Streamlines}"
-                                           ShowStreamlines="{Binding ShowStreamlines}"/>
+        <TabControl Grid.Row="1" SelectedIndex="{Binding ActiveTabIndex, Mode=TwoWay}">
+            <TabItem Header="Design">
+                <Grid ColumnDefinitions="260,4,280,*">
+                    <Grid Grid.Column="0" Margin="8" RowDefinitions="Auto,*">
+                        <TextBlock Grid.Row="0" Text="Case" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                        <TreeView Grid.Row="1"
+                                  ItemsSource="{Binding CaseTree}"
+                                  SelectedItem="{Binding SelectedTreeNode, Mode=TwoWay}">
+                            <TreeView.Styles>
+                                <!-- Bind each container's expansion to the node so it survives rebuilds. -->
+                                <Style Selector="TreeViewItem" x:DataType="vm:CaseTreeNode">
+                                    <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+                                </Style>
+                            </TreeView.Styles>
+                            <TreeView.ItemTemplate>
+                                <TreeDataTemplate ItemsSource="{Binding Children}"
+                                                  x:DataType="vm:CaseTreeNode">
+                                    <TextBlock Text="{Binding Name}"/>
+                                </TreeDataTemplate>
+                            </TreeView.ItemTemplate>
+                        </TreeView>
                     </Grid>
-                </TabItem>
-                <TabItem Header="Streamline Stress">
-                    <Grid RowDefinitions="Auto,*">
-                        <TextBlock Grid.Row="0" Margin="6,4"
-                                   Text="Per-streamline cumulative-method stress summary (worst margin first). E_avg/E_design are the governing cumulative average stress and distance-dependent withstand. Fields in kV/mm, lengths in mm."
-                                   TextWrapping="Wrap"/>
 
-                        <DataGrid Grid.Row="1"
-                                  ItemsSource="{Binding StreamlineSummary}"
-                                  AutoGenerateColumns="False"
-                                  IsReadOnly="True"
-                                  CanUserSortColumns="False"
-                                  GridLinesVisibility="Horizontal"
-                                  HeadersVisibility="Column">
-                            <DataGrid.Columns>
-                                <DataGridTemplateColumn Header="#" Width="50">
-                                    <DataGridTemplateColumn.CellTemplate>
-                                        <DataTemplate x:DataType="vm:StreamlineSummaryRow">
-                                            <TextBlock Text="{Binding Name}" Margin="6,2" VerticalAlignment="Center"/>
-                                        </DataTemplate>
-                                    </DataGridTemplateColumn.CellTemplate>
-                                </DataGridTemplateColumn>
-                                <DataGridTemplateColumn Header="E_avg" Width="*">
-                                    <DataGridTemplateColumn.CellTemplate>
-                                        <DataTemplate x:DataType="vm:StreamlineSummaryRow">
-                                            <TextBlock Text="{Binding PeakField, StringFormat='{}{0:N1}'}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
-                                        </DataTemplate>
-                                    </DataGridTemplateColumn.CellTemplate>
-                                </DataGridTemplateColumn>
-                                <DataGridTemplateColumn Header="E_design" Width="*">
-                                    <DataGridTemplateColumn.CellTemplate>
-                                        <DataTemplate x:DataType="vm:StreamlineSummaryRow">
-                                            <TextBlock Text="{Binding AllowableField, StringFormat='{}{0:N1}'}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
-                                        </DataTemplate>
-                                    </DataGridTemplateColumn.CellTemplate>
-                                </DataGridTemplateColumn>
-                                <DataGridTemplateColumn Header="Margin" Width="90">
-                                    <DataGridTemplateColumn.CellTemplate>
-                                        <DataTemplate x:DataType="vm:StreamlineSummaryRow">
-                                            <TextBlock Text="{Binding MarginText}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
-                                        </DataTemplate>
-                                    </DataGridTemplateColumn.CellTemplate>
-                                </DataGridTemplateColumn>
-                                <DataGridTemplateColumn Header="Max |E|" Width="*">
-                                    <DataGridTemplateColumn.CellTemplate>
-                                        <DataTemplate x:DataType="vm:StreamlineSummaryRow">
-                                            <TextBlock Text="{Binding MaxField, StringFormat='{}{0:N1}'}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
-                                        </DataTemplate>
-                                    </DataGridTemplateColumn.CellTemplate>
-                                </DataGridTemplateColumn>
-                                <DataGridTemplateColumn Header="Drop (kV)" Width="*">
-                                    <DataGridTemplateColumn.CellTemplate>
-                                        <DataTemplate x:DataType="vm:StreamlineSummaryRow">
-                                            <TextBlock Text="{Binding TotalDrop, StringFormat='{}{0:N1}'}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
-                                        </DataTemplate>
-                                    </DataGridTemplateColumn.CellTemplate>
-                                </DataGridTemplateColumn>
-                                <DataGridTemplateColumn Header="Length" Width="*">
-                                    <DataGridTemplateColumn.CellTemplate>
-                                        <DataTemplate x:DataType="vm:StreamlineSummaryRow">
-                                            <TextBlock Text="{Binding Length, StringFormat='{}{0:N1}'}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
-                                        </DataTemplate>
-                                    </DataGridTemplateColumn.CellTemplate>
-                                </DataGridTemplateColumn>
-                                <DataGridTemplateColumn Header="Segs" Width="60">
-                                    <DataGridTemplateColumn.CellTemplate>
-                                        <DataTemplate x:DataType="vm:StreamlineSummaryRow">
-                                            <TextBlock Text="{Binding SegmentCount}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
-                                        </DataTemplate>
-                                    </DataGridTemplateColumn.CellTemplate>
-                                </DataGridTemplateColumn>
-                                <DataGridTemplateColumn Header="Peak (x,y)" Width="110">
-                                    <DataGridTemplateColumn.CellTemplate>
-                                        <DataTemplate x:DataType="vm:StreamlineSummaryRow">
-                                            <TextBlock Text="{Binding PeakLocation}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
-                                        </DataTemplate>
-                                    </DataGridTemplateColumn.CellTemplate>
-                                </DataGridTemplateColumn>
-                                <DataGridTemplateColumn Header="Termination" Width="*">
-                                    <DataGridTemplateColumn.CellTemplate>
-                                        <DataTemplate x:DataType="vm:StreamlineSummaryRow">
-                                            <TextBlock Text="{Binding Termination}" Margin="6,2" VerticalAlignment="Center"/>
-                                        </DataTemplate>
-                                    </DataGridTemplateColumn.CellTemplate>
-                                </DataGridTemplateColumn>
-                            </DataGrid.Columns>
-                        </DataGrid>
+                    <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Stretch"
+                                  Background="Transparent"/>
+
+                    <Grid Grid.Column="2" Margin="8" RowDefinitions="Auto,*,Auto">
+                        <TextBlock Grid.Row="0" Text="Details" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                        <Border Grid.Row="1" BorderBrush="Gray" BorderThickness="1" Padding="8">
+                            <ScrollViewer>
+                                <ContentControl Content="{Binding SelectedComponent}"/>
+                            </ScrollViewer>
+                        </Border>
+
+                        <ProgressBar Grid.Row="2" IsIndeterminate="True"
+                                     IsVisible="{Binding IsSolving}"
+                                     Height="6" Margin="0,6,0,0"/>
                     </Grid>
-                </TabItem>
-                <TabItem Header="Scenario Envelope">
-                    <Grid RowDefinitions="Auto,*">
-                        <TextBlock Grid.Row="0" Margin="6,4"
-                                   Text="Worst-case envelope across all solved voltage permutations. The governing (lowest-margin) scenario is highlighted. Select a scenario above to view its field plot and per-streamline stress."
-                                   TextWrapping="Wrap"/>
 
-                        <DataGrid Grid.Row="1"
-                                  ItemsSource="{Binding ScenarioResults}"
-                                  AutoGenerateColumns="False"
-                                  IsReadOnly="True"
-                                  CanUserSortColumns="False"
-                                  GridLinesVisibility="Horizontal"
-                                  HeadersVisibility="Column">
-                            <DataGrid.Columns>
-                                <DataGridTemplateColumn Header="Scenario" Width="*">
-                                    <DataGridTemplateColumn.CellTemplate>
-                                        <DataTemplate x:DataType="vm:ScenarioResult">
-                                            <TextBlock Text="{Binding DisplayName}" Margin="6,2" VerticalAlignment="Center"
-                                                       FontWeight="{Binding IsGoverning, Converter={x:Static vm:BoolToWeightConverter.Instance}}"/>
-                                        </DataTemplate>
-                                    </DataGridTemplateColumn.CellTemplate>
-                                </DataGridTemplateColumn>
-                                <DataGridTemplateColumn Header="Margin" Width="90">
-                                    <DataGridTemplateColumn.CellTemplate>
-                                        <DataTemplate x:DataType="vm:ScenarioResult">
-                                            <TextBlock Text="{Binding MarginText}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
-                                        </DataTemplate>
-                                    </DataGridTemplateColumn.CellTemplate>
-                                </DataGridTemplateColumn>
-                                <DataGridTemplateColumn Header="Max |E|" Width="*">
-                                    <DataGridTemplateColumn.CellTemplate>
-                                        <DataTemplate x:DataType="vm:ScenarioResult">
-                                            <TextBlock Text="{Binding MaxField, StringFormat='{}{0:N1}'}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
-                                        </DataTemplate>
-                                    </DataGridTemplateColumn.CellTemplate>
-                                </DataGridTemplateColumn>
-                                <DataGridTemplateColumn Header="Lines" Width="70">
-                                    <DataGridTemplateColumn.CellTemplate>
-                                        <DataTemplate x:DataType="vm:ScenarioResult">
-                                            <TextBlock Text="{Binding StreamlineCount}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
-                                        </DataTemplate>
-                                    </DataGridTemplateColumn.CellTemplate>
-                                </DataGridTemplateColumn>
-                                <DataGridTemplateColumn Header="Governing line" Width="*">
-                                    <DataGridTemplateColumn.CellTemplate>
-                                        <DataTemplate x:DataType="vm:ScenarioResult">
-                                            <TextBlock Text="{Binding GoverningLocation}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
-                                        </DataTemplate>
-                                    </DataGridTemplateColumn.CellTemplate>
-                                </DataGridTemplateColumn>
-                                <DataGridTemplateColumn Header="Worst?" Width="70">
-                                    <DataGridTemplateColumn.CellTemplate>
-                                        <DataTemplate x:DataType="vm:ScenarioResult">
-                                            <TextBlock Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"
-                                                       Text="{Binding IsGoverning, Converter={x:Static vm:BoolToWorstConverter.Instance}}"/>
-                                        </DataTemplate>
-                                    </DataGridTemplateColumn.CellTemplate>
-                                </DataGridTemplateColumn>
-                            </DataGrid.Columns>
-                        </DataGrid>
-                    </Grid>
-                </TabItem>
-            </TabControl>
-        </Border>
+                    <Border Grid.Column="3" Margin="8"
+                            BorderBrush="Gray" BorderThickness="1">
+                        <views:GeometryView Geometry="{Binding CurrentGeometry}"
+                                            HighlightedSurfaces="{Binding HighlightedSurfaces}"
+                                            SurfaceCategories="{Binding SurfaceCategories}"/>
+                    </Border>
+                </Grid>
+            </TabItem>
 
-        <TextBlock Grid.Row="2" Grid.ColumnSpan="2"
+            <TabItem Header="Results">
+                <views:ResultsWorkspaceView DataContext="{Binding Results}"/>
+            </TabItem>
+        </TabControl>
+
+        <TextBlock Grid.Row="2"
                    Margin="12,4"
                    Text="{Binding StatusMessage}"/>
     </Grid>

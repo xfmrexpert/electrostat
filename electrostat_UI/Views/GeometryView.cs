@@ -4,6 +4,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using electrostat;
 using GeomGeometry = GeometryLib.Geometry;
 using GeometryLib;
 
@@ -35,6 +36,20 @@ namespace electrostat_UI.Views
             set => SetValue(HighlightedSurfacesProperty, value);
         }
 
+        public static readonly StyledProperty<IReadOnlyDictionary<GeomSurface, SurfaceCategory>?> SurfaceCategoriesProperty =
+            AvaloniaProperty.Register<GeometryView, IReadOnlyDictionary<GeomSurface, SurfaceCategory>?>(nameof(SurfaceCategories));
+
+        /// <summary>
+        /// Per-surface semantic classification used to color each region by component type
+        /// (winding, pressboard, static-ring paper, …). When a surface is absent the view
+        /// falls back to a neutral fill.
+        /// </summary>
+        public IReadOnlyDictionary<GeomSurface, SurfaceCategory>? SurfaceCategories
+        {
+            get => GetValue(SurfaceCategoriesProperty);
+            set => SetValue(SurfaceCategoriesProperty, value);
+        }
+
         // User-applied transform (relative to the auto-fit baseline).
         // World-to-screen is: screen = (autoFit(world) - _panOrigin) * _zoom + _panOrigin + _panOffset
         // Implemented in Render via a translate-scale-translate composition.
@@ -48,6 +63,7 @@ namespace electrostat_UI.Views
         {
             AffectsRender<GeometryView>(GeometryProperty);
             AffectsRender<GeometryView>(HighlightedSurfacesProperty);
+            AffectsRender<GeometryView>(SurfaceCategoriesProperty);
         }
 
         public GeometryView()
@@ -195,12 +211,13 @@ namespace electrostat_UI.Views
 
             // First pass: fill surfaces (skip the first surface, which is the oil/domain
             // bounding box; rendering it would obscure all the holes).
+            var categories = SurfaceCategories;
             for (int i = 0; i < geom.Surfaces.Count; i++)
             {
                 var surf = geom.Surfaces[i];
                 if (i == 0) continue;
 
-                var fill = PickFill(i);
+                var fill = PickFill(surf, categories);
                 DrawSurface(context, surf, Map, fill, null);
             }
 
@@ -229,19 +246,34 @@ namespace electrostat_UI.Views
 
         private static bool IsFinite(double v) => !double.IsNaN(v) && !double.IsInfinity(v);
 
-        private static IBrush PickFill(int i)
+        // Semi-transparent fills keyed by what each region physically represents, so
+        // components read by material/type at a glance rather than by a rotating palette.
+        private static readonly IBrush WindingFill = new SolidColorBrush(Color.FromArgb(140, 184, 115, 51));      // copper
+        private static readonly IBrush PressboardFill = new SolidColorBrush(Color.FromArgb(150, 120, 72, 40));    // dark brown
+        private static readonly IBrush AngleRingFill = new SolidColorBrush(Color.FromArgb(150, 120, 72, 40));     // dark brown
+        private static readonly IBrush StaticPaperFill = new SolidColorBrush(Color.FromArgb(140, 205, 170, 125)); // light brown / tan
+        private static readonly IBrush StaticMetalFill = new SolidColorBrush(Color.FromArgb(150, 150, 150, 150)); // gray metal
+        private static readonly IBrush OilFill = new SolidColorBrush(Color.FromArgb(40, 230, 220, 160));          // pale oil
+        private static readonly IBrush DefaultFill = new SolidColorBrush(Color.FromArgb(120, 100, 149, 237));     // cornflower fallback
+
+        private static IBrush PickFill(GeomSurface surf, IReadOnlyDictionary<GeomSurface, SurfaceCategory>? categories)
         {
-            // Cycle through a small palette so different components are visually distinct.
-            var palette = new IBrush[]
+            // Color each region by its component type. Surfaces without a known category
+            // (e.g. a geometry shown without build metadata) fall back to a neutral fill.
+            if (categories != null && categories.TryGetValue(surf, out var category))
             {
-                new SolidColorBrush(Color.FromArgb(120, 100, 149, 237)), // cornflower
-                new SolidColorBrush(Color.FromArgb(120, 144, 238, 144)), // light green
-                new SolidColorBrush(Color.FromArgb(120, 255, 182, 193)), // light pink
-                new SolidColorBrush(Color.FromArgb(120, 255, 215,   0)), // gold
-                new SolidColorBrush(Color.FromArgb(120, 221, 160, 221)), // plum
-                new SolidColorBrush(Color.FromArgb(120, 175, 238, 238)), // pale turquoise
-            };
-            return palette[i % palette.Length];
+                return category switch
+                {
+                    SurfaceCategory.Winding => WindingFill,
+                    SurfaceCategory.Pressboard => PressboardFill,
+                    SurfaceCategory.AngleRing => AngleRingFill,
+                    SurfaceCategory.StaticRingPaper => StaticPaperFill,
+                    SurfaceCategory.StaticRingMetal => StaticMetalFill,
+                    SurfaceCategory.Oil => OilFill,
+                    _ => DefaultFill,
+                };
+            }
+            return DefaultFill;
         }
 
         internal static void DrawSurface(

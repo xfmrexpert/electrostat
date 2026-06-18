@@ -1,0 +1,301 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+			 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+			 xmlns:vm="using:electrostat_UI.ViewModels"
+			 xmlns:views="using:electrostat_UI.Views"
+			 xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+			 xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+			 mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="700"
+			 x:Class="electrostat_UI.Views.ResultsWorkspaceView"
+			 x:DataType="vm:ResultsWorkspaceViewModel">
+
+	<Grid ColumnDefinitions="1.3*,4,*" RowDefinitions="Auto,1.4*,4,3*" Margin="4">
+
+		<!-- ===== Across-all-cuts summary (left column) ===== -->
+		<TextBlock Grid.Column="0" Grid.Row="0" Margin="6,4" FontWeight="SemiBold"
+				   Text="Results summary — all cuts (worst margin governs; select a cut to drill in)"/>
+
+		<DataGrid Grid.Column="0" Grid.Row="1"
+				  ItemsSource="{Binding CutResults}"
+				  SelectedItem="{Binding SelectedCutResult, Mode=TwoWay}"
+				  AutoGenerateColumns="False"
+				  IsReadOnly="True"
+				  CanUserSortColumns="False"
+				  GridLinesVisibility="Horizontal"
+				  HeadersVisibility="Column">
+			<DataGrid.Columns>
+				<DataGridTemplateColumn Header="Cut" Width="*">
+					<DataGridTemplateColumn.CellTemplate>
+						<DataTemplate x:DataType="vm:CutResult">
+							<TextBlock Text="{Binding DisplayName}" Margin="6,2" VerticalAlignment="Center"
+									   FontWeight="{Binding IsGoverning, Converter={x:Static vm:BoolToWeightConverter.Instance}}"/>
+						</DataTemplate>
+					</DataGridTemplateColumn.CellTemplate>
+				</DataGridTemplateColumn>
+				<DataGridTemplateColumn Header="Margin" Width="Auto">
+					<DataGridTemplateColumn.CellTemplate>
+						<DataTemplate x:DataType="vm:CutResult">
+							<TextBlock Text="{Binding MarginText}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+						</DataTemplate>
+					</DataGridTemplateColumn.CellTemplate>
+				</DataGridTemplateColumn>
+				<DataGridTemplateColumn Header="Max |E|" Width="Auto">
+					<DataGridTemplateColumn.CellTemplate>
+						<DataTemplate x:DataType="vm:CutResult">
+							<TextBlock Text="{Binding MaxField, StringFormat='{}{0:N1}'}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+						</DataTemplate>
+					</DataGridTemplateColumn.CellTemplate>
+				</DataGridTemplateColumn>
+				<DataGridTemplateColumn Header="Solved" Width="Auto">
+					<DataGridTemplateColumn.CellTemplate>
+						<DataTemplate x:DataType="vm:CutResult">
+							<TextBlock Text="{Binding SolvedScenarioCount}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+						</DataTemplate>
+					</DataGridTemplateColumn.CellTemplate>
+				</DataGridTemplateColumn>
+				<DataGridTemplateColumn Header="Scenarios" Width="Auto">
+					<DataGridTemplateColumn.CellTemplate>
+						<DataTemplate x:DataType="vm:CutResult">
+							<TextBlock Text="{Binding ScenarioCount}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+						</DataTemplate>
+					</DataGridTemplateColumn.CellTemplate>
+				</DataGridTemplateColumn>
+				<DataGridTemplateColumn Header="Lines" Width="Auto">
+					<DataGridTemplateColumn.CellTemplate>
+						<DataTemplate x:DataType="vm:CutResult">
+							<TextBlock Text="{Binding StreamlineCount}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+						</DataTemplate>
+					</DataGridTemplateColumn.CellTemplate>
+				</DataGridTemplateColumn>
+				<DataGridTemplateColumn Header="Governing scenario" Width="*">
+					<DataGridTemplateColumn.CellTemplate>
+						<DataTemplate x:DataType="vm:CutResult">
+							<TextBlock Text="{Binding GoverningScenarioName}" Margin="6,2" VerticalAlignment="Center"/>
+						</DataTemplate>
+					</DataGridTemplateColumn.CellTemplate>
+				</DataGridTemplateColumn>
+				<DataGridTemplateColumn Header="Worst?" Width="Auto">
+					<DataGridTemplateColumn.CellTemplate>
+						<DataTemplate x:DataType="vm:CutResult">
+							<TextBlock Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"
+									   Text="{Binding IsGoverning, Converter={x:Static vm:BoolToWorstConverter.Instance}}"/>
+						</DataTemplate>
+					</DataGridTemplateColumn.CellTemplate>
+				</DataGridTemplateColumn>
+			</DataGrid.Columns>
+		</DataGrid>
+
+		<GridSplitter Grid.Column="0" Grid.Row="2" Height="4" HorizontalAlignment="Stretch" Background="Transparent"/>
+
+		<!-- ===== Per-cut drill-down (left column) ===== -->
+		<Grid Grid.Column="0" Grid.Row="3" RowDefinitions="Auto,*">
+			<TextBlock Grid.Row="0" Margin="6,4" FontWeight="SemiBold"
+					   Text="{Binding SelectedCutResult.DisplayName, StringFormat='Cut: {0}'}"/>
+
+			<TabControl Grid.Row="1">
+				<!-- Per-streamline stress table + per-streamline detail plot -->
+				<TabItem Header="Streamline Stress">
+					<Grid RowDefinitions="Auto,2*,4,3*">
+						<TextBlock Grid.Row="0" Margin="6,4"
+								   Text="Per-streamline cumulative-method stress summary for the selected scenario (worst margin first). Select a row to plot its stress &amp; margin below. Fields in kV/mm, lengths in mm."
+								   TextWrapping="Wrap"/>
+
+						<DataGrid Grid.Row="1"
+								  ItemsSource="{Binding StreamlineSummary}"
+								  SelectedItem="{Binding SelectedStreamlineRow, Mode=TwoWay}"
+								  AutoGenerateColumns="False"
+								  IsReadOnly="True"
+								  CanUserSortColumns="False"
+								  GridLinesVisibility="Horizontal"
+								  HeadersVisibility="Column">
+							<DataGrid.Columns>
+								<DataGridTemplateColumn Header="#" Width="Auto">
+									<DataGridTemplateColumn.CellTemplate>
+										<DataTemplate x:DataType="vm:StreamlineSummaryRow">
+											<TextBlock Text="{Binding Name}" Margin="6,2" VerticalAlignment="Center"/>
+										</DataTemplate>
+									</DataGridTemplateColumn.CellTemplate>
+								</DataGridTemplateColumn>
+								<DataGridTemplateColumn Header="E_avg" Width="Auto">
+									<DataGridTemplateColumn.CellTemplate>
+										<DataTemplate x:DataType="vm:StreamlineSummaryRow">
+											<TextBlock Text="{Binding PeakField, StringFormat='{}{0:N1}'}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+										</DataTemplate>
+									</DataGridTemplateColumn.CellTemplate>
+								</DataGridTemplateColumn>
+								<DataGridTemplateColumn Header="E_design" Width="Auto">
+									<DataGridTemplateColumn.CellTemplate>
+										<DataTemplate x:DataType="vm:StreamlineSummaryRow">
+											<TextBlock Text="{Binding AllowableField, StringFormat='{}{0:N1}'}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+										</DataTemplate>
+									</DataGridTemplateColumn.CellTemplate>
+								</DataGridTemplateColumn>
+								<DataGridTemplateColumn Header="Margin" Width="Auto">
+									<DataGridTemplateColumn.CellTemplate>
+										<DataTemplate x:DataType="vm:StreamlineSummaryRow">
+											<TextBlock Text="{Binding MarginText}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+										</DataTemplate>
+									</DataGridTemplateColumn.CellTemplate>
+								</DataGridTemplateColumn>
+								<DataGridTemplateColumn Header="Max |E|" Width="Auto">
+									<DataGridTemplateColumn.CellTemplate>
+										<DataTemplate x:DataType="vm:StreamlineSummaryRow">
+											<TextBlock Text="{Binding MaxField, StringFormat='{}{0:N1}'}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+										</DataTemplate>
+									</DataGridTemplateColumn.CellTemplate>
+								</DataGridTemplateColumn>
+								<DataGridTemplateColumn Header="Drop (kV)" Width="Auto">
+									<DataGridTemplateColumn.CellTemplate>
+										<DataTemplate x:DataType="vm:StreamlineSummaryRow">
+											<TextBlock Text="{Binding TotalDrop, StringFormat='{}{0:N1}'}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+										</DataTemplate>
+									</DataGridTemplateColumn.CellTemplate>
+								</DataGridTemplateColumn>
+								<DataGridTemplateColumn Header="Length" Width="Auto">
+									<DataGridTemplateColumn.CellTemplate>
+										<DataTemplate x:DataType="vm:StreamlineSummaryRow">
+											<TextBlock Text="{Binding Length, StringFormat='{}{0:N1}'}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+										</DataTemplate>
+									</DataGridTemplateColumn.CellTemplate>
+								</DataGridTemplateColumn>
+								<DataGridTemplateColumn Header="Segs" Width="Auto">
+									<DataGridTemplateColumn.CellTemplate>
+										<DataTemplate x:DataType="vm:StreamlineSummaryRow">
+											<TextBlock Text="{Binding SegmentCount}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+										</DataTemplate>
+									</DataGridTemplateColumn.CellTemplate>
+								</DataGridTemplateColumn>
+								<DataGridTemplateColumn Header="Peak (x,y)" Width="Auto">
+									<DataGridTemplateColumn.CellTemplate>
+										<DataTemplate x:DataType="vm:StreamlineSummaryRow">
+											<TextBlock Text="{Binding PeakLocation}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+										</DataTemplate>
+									</DataGridTemplateColumn.CellTemplate>
+								</DataGridTemplateColumn>
+								<DataGridTemplateColumn Header="Termination" Width="*">
+									<DataGridTemplateColumn.CellTemplate>
+										<DataTemplate x:DataType="vm:StreamlineSummaryRow">
+											<TextBlock Text="{Binding Termination}" Margin="6,2" VerticalAlignment="Center"/>
+										</DataTemplate>
+									</DataGridTemplateColumn.CellTemplate>
+								</DataGridTemplateColumn>
+							</DataGrid.Columns>
+						</DataGrid>
+
+						<GridSplitter Grid.Row="2" Height="4" HorizontalAlignment="Stretch" Background="Transparent"/>
+
+						<views:StreamlineStressPlotView Grid.Row="3"
+														Streamline="{Binding SelectedStreamline}"
+														StreamlineNumber="{Binding SelectedStreamlineNumber}"/>
+					</Grid>
+				</TabItem>
+
+				<!-- Per-cut scenario envelope -->
+				<TabItem Header="Scenarios">
+					<Grid RowDefinitions="Auto,*">
+						<TextBlock Grid.Row="0" Margin="6,4"
+								   Text="Worst-case envelope across this cut's voltage permutations. The governing (lowest-margin) scenario is highlighted. Select it in the Field Plot tab to view its plot and per-streamline stress."
+								   TextWrapping="Wrap"/>
+
+						<DataGrid Grid.Row="1"
+								  ItemsSource="{Binding ScenarioResults}"
+								  SelectedItem="{Binding SelectedScenarioResult, Mode=TwoWay}"
+								  AutoGenerateColumns="False"
+								  IsReadOnly="True"
+								  CanUserSortColumns="False"
+								  GridLinesVisibility="Horizontal"
+								  HeadersVisibility="Column">
+							<DataGrid.Columns>
+								<DataGridTemplateColumn Header="Scenario" Width="*">
+									<DataGridTemplateColumn.CellTemplate>
+										<DataTemplate x:DataType="vm:ScenarioResult">
+											<TextBlock Text="{Binding DisplayName}" Margin="6,2" VerticalAlignment="Center"
+													   FontWeight="{Binding IsGoverning, Converter={x:Static vm:BoolToWeightConverter.Instance}}"/>
+										</DataTemplate>
+									</DataGridTemplateColumn.CellTemplate>
+								</DataGridTemplateColumn>
+								<DataGridTemplateColumn Header="Margin" Width="Auto">
+									<DataGridTemplateColumn.CellTemplate>
+										<DataTemplate x:DataType="vm:ScenarioResult">
+											<TextBlock Text="{Binding MarginText}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+										</DataTemplate>
+									</DataGridTemplateColumn.CellTemplate>
+								</DataGridTemplateColumn>
+								<DataGridTemplateColumn Header="Max |E|" Width="Auto">
+									<DataGridTemplateColumn.CellTemplate>
+										<DataTemplate x:DataType="vm:ScenarioResult">
+											<TextBlock Text="{Binding MaxField, StringFormat='{}{0:N1}'}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+										</DataTemplate>
+									</DataGridTemplateColumn.CellTemplate>
+								</DataGridTemplateColumn>
+								<DataGridTemplateColumn Header="Lines" Width="Auto">
+									<DataGridTemplateColumn.CellTemplate>
+										<DataTemplate x:DataType="vm:ScenarioResult">
+											<TextBlock Text="{Binding StreamlineCount}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+										</DataTemplate>
+									</DataGridTemplateColumn.CellTemplate>
+								</DataGridTemplateColumn>
+								<DataGridTemplateColumn Header="Governing line" Width="Auto">
+									<DataGridTemplateColumn.CellTemplate>
+										<DataTemplate x:DataType="vm:ScenarioResult">
+											<TextBlock Text="{Binding GoverningLocation}" Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+										</DataTemplate>
+									</DataGridTemplateColumn.CellTemplate>
+								</DataGridTemplateColumn>
+								<DataGridTemplateColumn Header="Worst?" Width="Auto">
+									<DataGridTemplateColumn.CellTemplate>
+										<DataTemplate x:DataType="vm:ScenarioResult">
+											<TextBlock Margin="6,2" HorizontalAlignment="Right" VerticalAlignment="Center"
+													   Text="{Binding IsGoverning, Converter={x:Static vm:BoolToWorstConverter.Instance}}"/>
+										</DataTemplate>
+									</DataGridTemplateColumn.CellTemplate>
+								</DataGridTemplateColumn>
+							</DataGrid.Columns>
+						</DataGrid>
+					</Grid>
+				</TabItem>
+			</TabControl>
+		</Grid>
+
+		<!-- ===== Splitter between tables (left) and field plot (right) ===== -->
+		<GridSplitter Grid.Column="1" Grid.Row="0" Grid.RowSpan="4"
+					  Width="4" HorizontalAlignment="Stretch" Background="Transparent"/>
+
+		<!-- ===== Field plot (right column, full window height) ===== -->
+		<Grid Grid.Column="2" Grid.Row="0" Grid.RowSpan="4" RowDefinitions="Auto,Auto,*">
+			<TextBlock Grid.Row="0" Margin="6,4" FontWeight="SemiBold"
+					   Text="{Binding SelectedCutResult.DisplayName, StringFormat='Field Plot — {0}'}"/>
+
+			<WrapPanel Grid.Row="1" Orientation="Horizontal" Margin="6,4">
+				<TextBlock Text="Scenario:" VerticalAlignment="Center" Margin="0,2,8,2"/>
+				<ComboBox ItemsSource="{Binding ScenarioResults}"
+						  SelectedItem="{Binding SelectedScenarioResult, Mode=TwoWay}"
+						  MinWidth="160" Margin="0,2,12,2">
+					<ComboBox.ItemTemplate>
+						<DataTemplate x:DataType="vm:ScenarioResult">
+							<TextBlock Text="{Binding DisplayName}"/>
+						</DataTemplate>
+					</ComboBox.ItemTemplate>
+				</ComboBox>
+				<TextBlock Text="Field:" VerticalAlignment="Center" Margin="0,2,8,2"/>
+				<ComboBox ItemsSource="{Binding AvailableFields}"
+						  SelectedItem="{Binding SelectedField, Mode=TwoWay}"
+						  MinWidth="80" Margin="0,2,12,2"/>
+				<CheckBox Content="Show mesh" Margin="0,2,12,2"
+						  IsChecked="{Binding ShowResultsMesh, Mode=TwoWay}"/>
+				<CheckBox Content="Show outlines" Margin="0,2,12,2"
+						  IsChecked="{Binding ShowResultsOutlines, Mode=TwoWay}"/>
+				<CheckBox Content="Show streamlines" Margin="0,2,12,2"
+						  IsChecked="{Binding ShowStreamlines, Mode=TwoWay}"/>
+			</WrapPanel>
+
+			<views:ResultsView Grid.Row="2"
+							   Solution="{Binding CurrentSolution}"
+							   FieldName="{Binding SelectedField}"
+							   ShowMesh="{Binding ShowResultsMesh}"
+							   Geometry="{Binding CurrentGeometry}"
+							   ShowGeometryOutlines="{Binding ShowResultsOutlines}"
+							   Streamlines="{Binding Streamlines}"
+							   ShowStreamlines="{Binding ShowStreamlines}"/>
+		</Grid>
+	</Grid>
+</UserControl>

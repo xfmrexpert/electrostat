@@ -1,12 +1,15 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using electrostat;
+using electrostat.IO;
+using electrostat_UI.Services;
 using electrostat_UI.ViewModels.Components;
 using GeometryLib;
 using TfmrLib.FEM;
@@ -15,7 +18,7 @@ namespace electrostat_UI.ViewModels
 {
     public partial class MainWindowViewModel : ViewModelBase
     {
-        public ObservableCollection<Transformer> Examples { get; }
+        public ObservableCollection<ExampleRef> Examples { get; } = new();
 
         public ObservableCollection<CaseTreeNode> CaseTree { get; } = new();
 
@@ -24,6 +27,12 @@ namespace electrostat_UI.ViewModels
 
         [ObservableProperty]
         private TransformerViewModel? _editingTransformer;
+
+        /// <summary>
+        /// The Results workspace: cut-grouped solved results (per-cut and across all cuts),
+        /// independent of the component tree / detail editor. Solve commands publish here.
+        /// </summary>
+        public ResultsWorkspaceViewModel Results { get; } = new();
 
         /// <summary>
         /// The cut whose geometry is previewed / solved. Driven by selecting a cut node in
@@ -44,8 +53,13 @@ namespace electrostat_UI.ViewModels
         [ObservableProperty]
         private Geometry? _currentGeometry;
 
+        /// <summary>
+        /// Per-surface semantic classification for the active geometry, letting the geometry
+        /// view color each region by component type (winding, pressboard, static-ring paper,
+        /// …) instead of a rotating index-based palette.
+        /// </summary>
         [ObservableProperty]
-        private FEMSolution? _currentSolution;
+        private IReadOnlyDictionary<GeomSurface, SurfaceCategory>? _surfaceCategories;
 
         [ObservableProperty]
         private string _statusMessage = "Select an example to render its geometry.";
@@ -53,39 +67,41 @@ namespace electrostat_UI.ViewModels
         [ObservableProperty]
         private bool _isSolving;
 
-        public string[] AvailableFields { get; } = new[] { "V", "|E|" };
-
-        [ObservableProperty]
-        private string _selectedField = "V";
-
-        [ObservableProperty]
-        private bool _showResultsMesh = false;
-
-        [ObservableProperty]
-        private bool _showResultsOutlines = true;
-
-        [ObservableProperty]
-        private IReadOnlyList<StreamlineWithMargin>? _streamlines;
-
-        [ObservableProperty]
-        private bool _showStreamlines = true;
-
-        /// <summary>Per-streamline stress metrics shown in the Streamline Stress tab.</summary>
-        public ObservableCollection<StreamlineSummaryRow> StreamlineSummary { get; } = new();
-
         /// <summary>
-        /// One entry per solved voltage permutation (scenario). Drives the scenario
-        /// selector and the cross-scenario envelope table. Empty until a solve runs.
-        /// </summary>
-        public ObservableCollection<ScenarioResult> ScenarioResults { get; } = new();
-
-        /// <summary>
-        /// The scenario whose field plot + stress table are currently shown. Selecting a
-        /// different scenario swaps the displayed solution / streamlines / summary without
-        /// re-solving.
+        /// Full path of the file backing the current case, or null for an unsaved
+        /// ("Untitled") document. Drives the window title and Save vs. Save As behavior.
         /// </summary>
         [ObservableProperty]
-        private ScenarioResult? _selectedScenarioResult;
+        [NotifyPropertyChangedFor(nameof(WindowTitle))]
+        private string? _currentFilePath;
+
+        /// <summary>True when the current case has unsaved edits.</summary>
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(WindowTitle))]
+        private bool _isModified;
+
+        /// <summary>Document-style window title: "{file or Untitled}{* if modified} — electrostat".</summary>
+        public string WindowTitle
+        {
+            get
+            {
+                string name = CurrentFilePath != null
+                    ? Path.GetFileNameWithoutExtension(CurrentFilePath)
+                    : "Untitled";
+                return $"{name}{(IsModified ? "*" : "")} — electrostat";
+            }
+        }
+
+        /// <summary>
+        /// Active top-level workspace tab: 0 = Design (component tree + editor + geometry),
+        /// 1 = Results. Bound to the root <c>TabControl.SelectedIndex</c>; auto-switches to
+        /// Results after a successful solve so the freshly published results are shown.
+        /// </summary>
+        [ObservableProperty]
+        private int _activeTabIndex;
+
+        private const int DesignTabIndex = 0;
+        private const int ResultsTabIndex = 1;
 
         // Coalesces rapid edits (e.g. while dragging a NumericUpDown spinner) into a
         // single geometry rebuild so the UI stays responsive.
@@ -106,25 +122,55 @@ namespace electrostat_UI.ViewModels
         // highlight and streamline features read. Replaces the former GeometryBuilder statics.
         private BuiltModel? _activeModel;
 
-        public MainWindowViewModel()
+        // File pickers + "save changes?" prompt. Null at design time (parameterless ctor),
+        // in which case the file commands are no-ops.
+        private readonly IDialogService? _dialogService;
+
+        // True while LoadTransformer is swapping the edited case in, so the resulting
+        // Changed / StructureChanged notifications don't mark the fresh document modified.
+        private bool _suppressDirty;
+
+        /// <summary>Invoked by the Exit command to request the host window close.</summary>
+        public Action? RequestClose { get; set; }
+
+        public MainWindowViewModel() : this(null) { }
+
+        public MainWindowViewModel(IDialogService? dialogService)
         {
-            Examples = new ObservableCollection<Transformer>(electrostat.Examples.All());
+            _dialogService = dialogService;
+
+            LoadExamples();
 
             _rebuildTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(75) };
             _rebuildTimer.Tick += (_, _) => { _rebuildTimer.Stop(); RebuildGeometry(); };
 
-            if (Examples.Count > 0)
+            // Start on a fresh, unsaved document so the app never treats a bundled example
+            // path as the working file.
+            NewCase();
+        }
+
+        /// <summary>
+        /// Discover the bundled <c>.estat</c> example files copied next to the executable and
+        /// expose them (by display name) in the File ▸ Examples menu.
+        /// </summary>
+        private void LoadExamples()
+        {
+            Examples.Clear();
+            string dir = Path.Combine(AppContext.BaseDirectory, "Examples");
+            if (!Directory.Exists(dir)) return;
+
+            foreach (var path in Directory.EnumerateFiles(dir, "*" + TransformerSerializer.FileExtension)
+                                          .OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
             {
-                SelectedTransformer = Examples[0];
+                Examples.Add(new ExampleRef(Path.GetFileNameWithoutExtension(path), path));
             }
         }
 
         partial void OnSelectedTransformerChanged(Transformer? value)
         {
-            CurrentSolution = null;
-            Streamlines = null;
-            ScenarioResults.Clear();
-            SelectedScenarioResult = null;
+            Results.Clear();
+            // A new case has no results yet, so return to the Design workspace.
+            ActiveTabIndex = DesignTabIndex;
 
             if (EditingTransformer != null)
             {
@@ -158,37 +204,13 @@ namespace electrostat_UI.ViewModels
             RebuildGeometry();
         }
 
-        partial void OnStreamlinesChanged(IReadOnlyList<StreamlineWithMargin>? value)
-        {
-            StreamlineSummary.Clear();
-            if (value == null) return;
-
-            // The list arrives pre-sorted worst-first by minimum safety margin (see
-            // BuildStreamlines), so number rows by list position. This 1-based index is
-            // the same one the Results-plot hover tooltip reports, keeping the two views
-            // in sync.
-            int index = 1;
-            foreach (var s in value)
-                StreamlineSummary.Add(StreamlineSummaryRow.FromStreamline(index++, s));
-        }
-
-        partial void OnSelectedScenarioResultChanged(ScenarioResult? value)
-        {
-            // Swap the displayed field solution + streamlines to the chosen scenario without
-            // re-solving. OnStreamlinesChanged rebuilds the stress summary table.
-            if (value == null) return;
-            CurrentSolution = value.Solution;
-            CurrentGeometry = value.Geometry ?? CurrentGeometry;
-            Streamlines = value.Streamlines;
-            UpdateHighlight();
-        }
-
         private void OnCaseChanged()
         {
             // Pure value edits (e.g. dragging a NumericUpDown) only affect the geometry.
             // Debounce: restart the timer on every change. The case explorer is left intact
             // so its expansion / selection survive editing — it is rebuilt only when the
             // structure actually changes (see OnCaseStructureChanged).
+            if (!_suppressDirty) IsModified = true;
             _rebuildTimer.Stop();
             _rebuildTimer.Start();
         }
@@ -197,6 +219,7 @@ namespace electrostat_UI.ViewModels
         {
             // Structural edits (add / remove / rename / re-parent) change tree labels or
             // membership, so refresh the explorer — preserving expansion + selection.
+            if (!_suppressDirty) IsModified = true;
             RebuildCaseTree();
         }
 
@@ -256,6 +279,7 @@ namespace electrostat_UI.ViewModels
             {
                 CurrentGeometry = null;
                 HighlightedSurfaces = null;
+                SurfaceCategories = null;
                 StatusMessage = "No transformer loaded.";
                 return;
             }
@@ -266,6 +290,7 @@ namespace electrostat_UI.ViewModels
             {
                 CurrentGeometry = null;
                 HighlightedSurfaces = null;
+                SurfaceCategories = null;
                 StatusMessage = $"{tx.Name}: no cuts defined.";
                 return;
             }
@@ -275,6 +300,7 @@ namespace electrostat_UI.ViewModels
                 var model = tx.ResolveCut(cut);
                 _activeModel = GeometryBuilder.BuildGeometryOnly(model, clipToDomain: true);
                 CurrentGeometry = _activeModel.Geometry;
+                SurfaceCategories = _activeModel.SurfaceCategories;
                 StatusMessage = $"{tx.Name} / {cut.Name} ({cut.GeometryType}): {CurrentGeometry.Surfaces.Count} surfaces";
                 UpdateHighlight();
             }
@@ -283,16 +309,154 @@ namespace electrostat_UI.ViewModels
                 _activeModel = null;
                 CurrentGeometry = null;
                 HighlightedSurfaces = null;
+                SurfaceCategories = null;
                 StatusMessage = $"Failed to build {cut.Name}: {ex.Message}";
             }
         }
 
-        [RelayCommand]
-        private void SelectTransformer(Transformer? transformer)
+        // ---- File commands ----
+
+        /// <summary>
+        /// Replace the edited case with <paramref name="transformer"/>, recording its backing
+        /// <paramref name="filePath"/> (null for an unsaved document) and clearing the dirty
+        /// flag. Suppresses the change notifications raised while the new case is wired up.
+        /// </summary>
+        private void LoadTransformer(Transformer transformer, string? filePath)
         {
-            if (transformer != null)
+            _suppressDirty = true;
+            try
+            {
                 SelectedTransformer = transformer;
+            }
+            finally
+            {
+                _suppressDirty = false;
+            }
+
+            CurrentFilePath = filePath;
+            IsModified = false;
         }
+
+        /// <summary>Start a fresh, unsaved case: empty components plus one default cut.</summary>
+        private void NewCase()
+        {
+            var domain = new Domain(RInner: 100, ROuter: 500, ZLower: 0, ZUpper: 1500);
+            var transformer = new Transformer(
+                "Untitled",
+                CoreLegRadius: 100,
+                WindowWidth: 500,
+                Windings: new List<WindingBlock>(),
+                Pressboards: new List<PressboardBarrier>(),
+                AngleRings: new List<AngleRing>(),
+                StaticRings: new List<StaticRing>(),
+                InterphaseBarriers: new List<PressboardBarrier>(),
+                InterphaseAngleRings: new List<AngleRing>(),
+                Voltages: new Dictionary<string, double>(),
+                Scenarios: null,
+                Cuts: new List<Cut> { new Cut("Cut_1", domain, GeometryType.Axisymmetric) });
+
+            LoadTransformer(transformer, filePath: null);
+        }
+
+        /// <summary>
+        /// If the current case has unsaved changes, ask whether to save / discard / cancel.
+        /// Returns false only when the user cancels (so the caller should abort its action).
+        /// </summary>
+        public async Task<bool> PromptSaveIfDirtyAsync()
+        {
+            if (!IsModified || _dialogService == null)
+                return true;
+
+            var result = await _dialogService.ConfirmSaveChangesAsync();
+            return result switch
+            {
+                SaveChangesResult.Save => await SaveCoreAsync(saveAs: false),
+                SaveChangesResult.Discard => true,
+                _ => false,
+            };
+        }
+
+        private async Task LoadFromFileAsync(string path)
+        {
+            try
+            {
+                var transformer = await TransformerSerializer.LoadAsync(path);
+                LoadTransformer(transformer, path);
+                StatusMessage = $"Opened {Path.GetFileName(path)}.";
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Open failed: {ex.Message}";
+            }
+        }
+
+        /// <summary>
+        /// Serialize the current case. Prompts for a path when <paramref name="saveAs"/> is
+        /// true or the case has no backing file yet. Returns true on a successful write.
+        /// </summary>
+        private async Task<bool> SaveCoreAsync(bool saveAs)
+        {
+            if (EditingTransformer == null || _dialogService == null)
+                return false;
+
+            string? path = CurrentFilePath;
+            if (saveAs || path == null)
+            {
+                string suggested = EditingTransformer.Name + TransformerSerializer.FileExtension;
+                path = await _dialogService.SaveFileAsync(suggested);
+                if (path == null) return false;
+            }
+
+            try
+            {
+                await TransformerSerializer.SaveAsync(EditingTransformer.ToModel(), path);
+                CurrentFilePath = path;
+                IsModified = false;
+                StatusMessage = $"Saved {Path.GetFileName(path)}.";
+                return true;
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Save failed: {ex.Message}";
+                return false;
+            }
+        }
+
+        [RelayCommand]
+        private async Task NewAsync()
+        {
+            if (!await PromptSaveIfDirtyAsync()) return;
+            NewCase();
+            StatusMessage = "New case.";
+        }
+
+        [RelayCommand]
+        private async Task OpenAsync()
+        {
+            if (_dialogService == null) return;
+            if (!await PromptSaveIfDirtyAsync()) return;
+
+            var path = await _dialogService.OpenFileAsync();
+            if (path == null) return;
+            await LoadFromFileAsync(path);
+        }
+
+        [RelayCommand]
+        private async Task OpenExampleAsync(ExampleRef? example)
+        {
+            if (example == null) return;
+            if (!await PromptSaveIfDirtyAsync()) return;
+            await LoadFromFileAsync(example.Path);
+        }
+
+        [RelayCommand]
+        private async Task SaveAsync() => await SaveCoreAsync(saveAs: false);
+
+        [RelayCommand]
+        private async Task SaveAsAsync() => await SaveCoreAsync(saveAs: true);
+
+        [RelayCommand]
+        private void Exit() => RequestClose?.Invoke();
 
         // ---- Add / Remove component commands ----
 
@@ -569,12 +733,14 @@ namespace electrostat_UI.ViewModels
             SolveAllCutsCommand.NotifyCanExecuteChanged();
             try
             {
-                var results = await SolveCaseAsync(tx.ResolveCut(cut), cut.Name, prefixScenarioName: false);
-                PublishResults(results, cut.Name);
+                var scenarios = await SolveCaseAsync(tx.ResolveCut(cut), cut.Name);
+                var cutResults = new List<CutResult> { CutResult.FromScenarios(cut.Name, scenarios) };
+                Results.Publish(cutResults);
+                ReportSolveStatus(cutResults, cut.Name);
+                ActiveTabIndex = ResultsTabIndex;
             }
             catch (Exception exc)
             {
-                CurrentSolution = null;
                 StatusMessage = $"Solve failed: {exc.Message}";
             }
             finally
@@ -586,8 +752,8 @@ namespace electrostat_UI.ViewModels
         }
 
         /// <summary>
-        /// Solve every cut of the current transformer in turn, aggregating all cuts'
-        /// scenarios into one results view (scenario names are prefixed with the cut name).
+        /// Solve every cut of the current transformer in turn, publishing one
+        /// <see cref="CutResult"/> per cut so results stay grouped by cut.
         /// </summary>
         [RelayCommand(CanExecute = nameof(CanSolveAllCuts))]
         private async Task SolveAllCutsAsync()
@@ -601,19 +767,20 @@ namespace electrostat_UI.ViewModels
             try
             {
                 var cuts = tx.Cuts.ToList();
-                var all = new List<ScenarioResult>();
+                var cutResults = new List<CutResult>(cuts.Count);
                 for (int i = 0; i < cuts.Count; i++)
                 {
                     var cut = cuts[i];
                     StatusMessage = $"Solving cut {i + 1}/{cuts.Count}: {cut.Name}...";
-                    var results = await SolveCaseAsync(tx.ResolveCut(cut), cut.Name, prefixScenarioName: true);
-                    all.AddRange(results);
+                    var scenarios = await SolveCaseAsync(tx.ResolveCut(cut), cut.Name);
+                    cutResults.Add(CutResult.FromScenarios(cut.Name, scenarios));
                 }
-                PublishResults(all, $"{tx.Name} ({cuts.Count} cuts)");
+                Results.Publish(cutResults);
+                ReportSolveStatus(cutResults, $"{tx.Name} ({cuts.Count} cuts)");
+                ActiveTabIndex = ResultsTabIndex;
             }
             catch (Exception exc)
             {
-                CurrentSolution = null;
                 StatusMessage = $"Solve failed: {exc.Message}";
             }
             finally
@@ -627,12 +794,12 @@ namespace electrostat_UI.ViewModels
         /// <summary>
         /// Build the mesh for <paramref name="ex"/> once, solve every scenario against it,
         /// and return one <see cref="ScenarioResult"/> per scenario. Does not touch the
-        /// results view; callers aggregate / publish. When <paramref name="prefixScenarioName"/>
-        /// is true each scenario name is prefixed with <paramref name="label"/> so results
-        /// from multiple cuts stay distinguishable in one aggregated list.
+        /// results view; callers wrap the scenarios into a <see cref="CutResult"/> and publish.
+        /// Cut identity is carried by the owning <see cref="CutResult"/>, so scenario names
+        /// are left unprefixed.
         /// </summary>
         private async Task<List<ScenarioResult>> SolveCaseAsync(
-            ElectrostatCase ex, string label, bool prefixScenarioName)
+            ElectrostatCase ex, string label)
         {
             // A case with no scenarios solves once from its base voltages (labelled "Base");
             // otherwise every scenario is evaluated. The geometry/mesh depends only on the
@@ -674,9 +841,7 @@ namespace electrostat_UI.ViewModels
             var results = new List<ScenarioResult>(builtModel.ScenarioSolutions.Count);
             foreach (var scenarioSolution in builtModel.ScenarioSolutions)
             {
-                string scenarioName = prefixScenarioName
-                    ? $"{label} / {scenarioSolution.Name}"
-                    : scenarioSolution.Name;
+                string scenarioName = scenarioSolution.Name;
                 var sol = scenarioSolution.Solution;
 
                 if (sol == null)
@@ -702,47 +867,42 @@ namespace electrostat_UI.ViewModels
         }
 
         /// <summary>
-        /// Flag the governing (overall worst-margin) scenario, replace the results view,
-        /// select the governing scenario by default, and report a summary status for
-        /// <paramref name="label"/>.
+        /// Report a summary status line for a freshly published set of cut results. The
+        /// results themselves are owned by <see cref="Results"/>; this only narrates the
+        /// outcome (solved counts and the overall governing cut) for <paramref name="label"/>.
         /// </summary>
-        private void PublishResults(List<ScenarioResult> results, string label)
+        private void ReportSolveStatus(IReadOnlyList<CutResult> cuts, string label)
         {
-            ScenarioResult? governing = null;
-            foreach (var r in results)
+            int scenarioTotal = 0;
+            int scenarioSolved = 0;
+            CutResult? governing = null;
+            string? firstStatusDetail = null;
+
+            foreach (var c in cuts)
             {
-                r.IsGoverning = false;
-                if (r.Solution == null) continue;
-                if (governing == null || r.WorstMargin < governing.WorstMargin)
-                    governing = r;
+                scenarioTotal += c.ScenarioCount;
+                scenarioSolved += c.SolvedScenarioCount;
+                if (c.IsGoverning) governing = c;
+                foreach (var s in c.Scenarios)
+                    firstStatusDetail ??= s.StatusDetail;
             }
-            if (governing != null) governing.IsGoverning = true;
 
-            ScenarioResults.Clear();
-            foreach (var r in results) ScenarioResults.Add(r);
-
-            // Show the governing scenario by default (worst case drives design review);
-            // fall back to the first scenario that produced a solution, else the first.
-            SelectedScenarioResult =
-                governing
-                ?? results.Find(r => r.Solution != null)
-                ?? (results.Count > 0 ? results[0] : null);
-
-            int solved = results.FindAll(r => r.Solution != null).Count;
-            if (results.Count == 0)
+            if (scenarioTotal == 0)
             {
                 StatusMessage = $"Solve completed but produced no scenarios for {label}.";
             }
-            else if (solved == 0)
+            else if (scenarioSolved == 0)
             {
                 StatusMessage = $"Solve completed but no results were loaded for {label}. " +
-                                results[0].StatusDetail;
+                                firstStatusDetail;
             }
             else
             {
-                StatusMessage = $"Solved {label}: {solved}/{results.Count} scenario(s). " +
+                StatusMessage = $"Solved {label}: {scenarioSolved}/{scenarioTotal} scenario(s) " +
+                                $"across {cuts.Count} cut(s). " +
                                 (governing != null
-                                    ? $"Governing: {governing.Name} (margin {governing.MarginText}, max |E| {governing.MaxField:N1} kV/mm)."
+                                    ? $"Governing: {governing.CutName} / {governing.GoverningScenarioName} " +
+                                      $"(margin {governing.MarginText}, max |E| {governing.MaxField:N1} kV/mm)."
                                     : "No constrained gaps found.");
             }
         }
