@@ -3,7 +3,7 @@
 			 xmlns:cvm="using:electrostat_UI.ViewModels.Components"
 			 xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
 			 xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-			 mc:Ignorable="d" d:DesignWidth="260" d:DesignHeight="190"
+			 mc:Ignorable="d" d:DesignWidth="260" d:DesignHeight="420"
 			 x:Class="electrostat_UI.Views.Components.PressboardEditorView"
 			 x:DataType="cvm:PressboardViewModel">
 	<StackPanel Spacing="4">
@@ -20,5 +20,39 @@
 			<TextBlock Grid.Row="4" Grid.Column="0" Text="Height" VerticalAlignment="Center"/>
 			<NumericUpDown Grid.Row="4" Grid.Column="1" Value="{Binding Height}"/>
 		</Grid>
+
+		<Border BorderBrush="#DDDDDD" BorderThickness="1" CornerRadius="3" Padding="6">
+			<StackPanel Spacing="2">
+				<CheckBox Content="Top taper" IsChecked="{Binding TaperTop.Enabled}"/>
+				<Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="2" ColumnSpacing="6"
+					  IsEnabled="{Binding TaperTop.Enabled}">
+					<TextBlock Grid.Row="0" Grid.Column="0" Text="Length" VerticalAlignment="Center"/>
+					<NumericUpDown Grid.Row="0" Grid.Column="1" Value="{Binding TaperTop.Length}"/>
+					<TextBlock Grid.Row="1" Grid.Column="0" Text="End thick" VerticalAlignment="Center"/>
+					<NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding TaperTop.EndThickness}"/>
+					<TextBlock Grid.Row="2" Grid.Column="0" Text="Side" VerticalAlignment="Center"/>
+					<ComboBox Grid.Row="2" Grid.Column="1" HorizontalAlignment="Stretch"
+							  ItemsSource="{x:Static cvm:TaperViewModel.SideOptions}"
+							  SelectedItem="{Binding TaperTop.Side}"/>
+				</Grid>
+			</StackPanel>
+		</Border>
+
+		<Border BorderBrush="#DDDDDD" BorderThickness="1" CornerRadius="3" Padding="6">
+			<StackPanel Spacing="2">
+				<CheckBox Content="Bottom taper" IsChecked="{Binding TaperBottom.Enabled}"/>
+				<Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="2" ColumnSpacing="6"
+					  IsEnabled="{Binding TaperBottom.Enabled}">
+					<TextBlock Grid.Row="0" Grid.Column="0" Text="Length" VerticalAlignment="Center"/>
+					<NumericUpDown Grid.Row="0" Grid.Column="1" Value="{Binding TaperBottom.Length}"/>
+					<TextBlock Grid.Row="1" Grid.Column="0" Text="End thick" VerticalAlignment="Center"/>
+					<NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding TaperBottom.EndThickness}"/>
+					<TextBlock Grid.Row="2" Grid.Column="0" Text="Side" VerticalAlignment="Center"/>
+					<ComboBox Grid.Row="2" Grid.Column="1" HorizontalAlignment="Stretch"
+							  ItemsSource="{x:Static cvm:TaperViewModel.SideOptions}"
+							  SelectedItem="{Binding TaperBottom.Side}"/>
+				</Grid>
+			</StackPanel>
+		</Border>
 	</StackPanel>
 </UserControl>

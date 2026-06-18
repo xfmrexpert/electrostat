@@ -3,7 +3,7 @@
 			 xmlns:cvm="using:electrostat_UI.ViewModels.Components"
 			 xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
 			 xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-			 mc:Ignorable="d" d:DesignWidth="260" d:DesignHeight="270"
+			 mc:Ignorable="d" d:DesignWidth="260" d:DesignHeight="400"
 			 x:Class="electrostat_UI.Views.Components.AngleRingEditorView"
 			 x:DataType="cvm:AngleRingViewModel">
 	<StackPanel Spacing="4">
@@ -26,5 +26,22 @@
 			<TextBlock Grid.Row="7" Grid.Column="0" Text="Fillet R" VerticalAlignment="Center"/>
 			<NumericUpDown Grid.Row="7" Grid.Column="1" Value="{Binding InsideFilletR}"/>
 		</Grid>
+
+		<Border BorderBrush="#DDDDDD" BorderThickness="1" CornerRadius="3" Padding="6">
+			<StackPanel Spacing="2">
+				<CheckBox Content="V-tip taper" IsChecked="{Binding TaperVTip.Enabled}"/>
+				<Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="2" ColumnSpacing="6"
+					  IsEnabled="{Binding TaperVTip.Enabled}">
+					<TextBlock Grid.Row="0" Grid.Column="0" Text="Length" VerticalAlignment="Center"/>
+					<NumericUpDown Grid.Row="0" Grid.Column="1" Value="{Binding TaperVTip.Length}"/>
+					<TextBlock Grid.Row="1" Grid.Column="0" Text="End thick" VerticalAlignment="Center"/>
+					<NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding TaperVTip.EndThickness}"/>
+					<TextBlock Grid.Row="2" Grid.Column="0" Text="Side" VerticalAlignment="Center"/>
+					<ComboBox Grid.Row="2" Grid.Column="1" HorizontalAlignment="Stretch"
+							  ItemsSource="{x:Static cvm:TaperViewModel.SideOptions}"
+							  SelectedItem="{Binding TaperVTip.Side}"/>
+				</Grid>
+			</StackPanel>
+		</Border>
 	</StackPanel>
 </UserControl>

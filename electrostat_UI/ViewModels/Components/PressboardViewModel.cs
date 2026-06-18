@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using electrostat;
 
@@ -10,11 +11,16 @@ namespace electrostat_UI.ViewModels.Components
         [ObservableProperty] private double _thickness;
         [ObservableProperty] private double _height;
 
-        // Tapers are kept as immutable copies for now (UI editing TBD).
-        public Taper? TaperTop { get; set; }
-        public Taper? TaperBottom { get; set; }
+        /// <summary>Editable taper on the top (high-z) end; disabled means a square end.</summary>
+        public TaperViewModel TaperTop { get; }
 
-        public PressboardViewModel() { Name = "Pressboard"; }
+        /// <summary>Editable taper on the bottom (low-z) end; disabled means a square end.</summary>
+        public TaperViewModel TaperBottom { get; }
+
+        public PressboardViewModel() : this(default(PressboardBarrier))
+        {
+            Name = "Pressboard";
+        }
 
         public PressboardViewModel(PressboardBarrier pb)
         {
@@ -23,11 +29,20 @@ namespace electrostat_UI.ViewModels.Components
             _zBottom = pb.ZBottom;
             _thickness = pb.Thickness;
             _height = pb.Height;
-            TaperTop = pb.TaperTop;
-            TaperBottom = pb.TaperBottom;
+            TaperTop = new TaperViewModel(pb.TaperTop);
+            TaperBottom = new TaperViewModel(pb.TaperBottom);
+
+            // Surface nested taper edits as a change on this component so the owning
+            // TransformerViewModel rebuilds the geometry (a non-Name change avoids a
+            // structural tree refresh).
+            TaperTop.PropertyChanged += OnTaperChanged;
+            TaperBottom.PropertyChanged += OnTaperChanged;
         }
 
+        private void OnTaperChanged(object? sender, PropertyChangedEventArgs e) =>
+            OnPropertyChanged(ReferenceEquals(sender, TaperTop) ? nameof(TaperTop) : nameof(TaperBottom));
+
         public PressboardBarrier ToModel() =>
-            new(Name, R0, ZBottom, Thickness, Height, TaperTop, TaperBottom);
+            new(Name, R0, ZBottom, Thickness, Height, TaperTop.ToModel(), TaperBottom.ToModel());
     }
 }

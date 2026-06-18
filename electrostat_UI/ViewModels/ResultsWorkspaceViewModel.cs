@@ -44,7 +44,7 @@ namespace electrostat_UI.ViewModels
         [ObservableProperty] private IReadOnlyList<StreamlineWithMargin>? _streamlines;
 
         public string[] AvailableFields { get; } = new[] { "V", "|E|" };
-        [ObservableProperty] private string _selectedField = "V";
+        [ObservableProperty] private string _selectedField = "|E|";
         [ObservableProperty] private bool _showResultsMesh = false;
         [ObservableProperty] private bool _showResultsOutlines = true;
         [ObservableProperty] private bool _showStreamlines = true;

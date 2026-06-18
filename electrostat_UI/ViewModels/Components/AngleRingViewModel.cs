@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using electrostat;
 
@@ -13,9 +14,13 @@ namespace electrostat_UI.ViewModels.Components
         [ObservableProperty] private double _wh;
         [ObservableProperty] private double _insideFilletR;
 
-        public Taper? TaperVTip { get; set; }
+        /// <summary>Editable taper on the vertical-leg tip; disabled means a square end.</summary>
+        public TaperViewModel TaperVTip { get; }
 
-        public AngleRingViewModel() { Name = "AngleRing"; }
+        public AngleRingViewModel() : this(default(AngleRing))
+        {
+            Name = "AngleRing";
+        }
 
         public AngleRingViewModel(AngleRing ar)
         {
@@ -27,10 +32,18 @@ namespace electrostat_UI.ViewModels.Components
             _th = ar.Th;
             _wh = ar.Wh;
             _insideFilletR = ar.InsideFilletR;
-            TaperVTip = ar.TaperVTip;
+            TaperVTip = new TaperViewModel(ar.TaperVTip);
+
+            // Surface nested taper edits as a change on this component so the owning
+            // TransformerViewModel rebuilds the geometry (a non-Name change avoids a
+            // structural tree refresh).
+            TaperVTip.PropertyChanged += OnTaperChanged;
         }
 
+        private void OnTaperChanged(object? sender, PropertyChangedEventArgs e) =>
+            OnPropertyChanged(nameof(TaperVTip));
+
         public AngleRing ToModel() =>
-            new(Name, R0, ZCorner, Tv, Hv, Th, Wh, InsideFilletR, TaperVTip);
+            new(Name, R0, ZCorner, Tv, Hv, Th, Wh, InsideFilletR, TaperVTip.ToModel());
     }
 }

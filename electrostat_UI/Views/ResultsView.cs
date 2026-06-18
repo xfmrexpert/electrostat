@@ -35,7 +35,7 @@ namespace electrostat_UI.Views
             AvaloniaProperty.Register<ResultsView, FEMSolution?>(nameof(Solution));
 
         public static readonly StyledProperty<string?> FieldNameProperty =
-            AvaloniaProperty.Register<ResultsView, string?>(nameof(FieldName), "V");
+            AvaloniaProperty.Register<ResultsView, string?>(nameof(FieldName), "|E|");
 
         public static readonly StyledProperty<bool> ShowMeshProperty =
             AvaloniaProperty.Register<ResultsView, bool>(nameof(ShowMesh), true);
