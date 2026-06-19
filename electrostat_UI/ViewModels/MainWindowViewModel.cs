@@ -68,6 +68,16 @@ namespace electrostat_UI.ViewModels
         private bool _isSolving;
 
         /// <summary>
+        /// When true, the next solve requests adaptive mesh refinement (AMR) from the
+        /// MFEM-ElectroMag solver: it refines the mesh around divergent fields (conductor
+        /// corners) until its error/iteration/DOF criteria are met, improving |E| / stress
+        /// accuracy. On by default now that the solver supports AMR; the Run-menu toggle
+        /// can disable it to fall back to the single-solve path.
+        /// </summary>
+        [ObservableProperty]
+        private bool _useAdaptiveRefinement = true;
+
+        /// <summary>
         /// Full path of the file backing the current case, or null for an unsaved
         /// ("Untitled") document. Drives the window title and Save vs. Save As behavior.
         /// </summary>
@@ -820,9 +830,15 @@ namespace electrostat_UI.ViewModels
             // against this one mesh. Seed the base effective voltages so a Dirichlet BC /
             // terminal is created for every electrode and wall.
             StatusMessage = $"Building mesh for {label}...";
+
+            // Capture the AMR choice on the UI thread before handing off to the worker.
+            // When enabled, the solver refines around divergent fields and returns the
+            // final refined mesh through the usual results contract; when disabled (the
+            // default) amr stays null and the build/solve path is byte-for-byte as before.
+            var amr = UseAdaptiveRefinement ? new AmrSettings { Enabled = true } : null;
             var builtModel = await Task.Run(() => GeometryBuilder.BuildMesh(
                 ex with { Voltages = ex.EffectiveVoltages(null) },
-                caseName, lc: 5.0, clipToDomain: true));
+                caseName, lc: 5.0, clipToDomain: true, amr: amr));
             _activeModel = builtModel;
 
             // The electrode surfaces / Dirichlet walls and geometry are stable for the

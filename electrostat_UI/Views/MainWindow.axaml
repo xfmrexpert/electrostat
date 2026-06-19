@@ -101,6 +101,10 @@
             <MenuItem Header="_Run">
                 <MenuItem Header="Solve _Cut" Command="{Binding SolveCutCommand}"/>
                 <MenuItem Header="Solve _All Cuts" Command="{Binding SolveAllCutsCommand}"/>
+                <Separator/>
+                <MenuItem Header="Adaptive _Mesh Refinement"
+                          ToggleType="CheckBox"
+                          IsChecked="{Binding UseAdaptiveRefinement, Mode=TwoWay}"/>
             </MenuItem>
         </Menu>
 

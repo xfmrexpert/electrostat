@@ -310,14 +310,16 @@ namespace electrostat
             ElectrostatCase _case,
             string caseName,
             double lc = 5.0,
-            bool clipToDomain = true)
+            bool clipToDomain = true,
+            AmrSettings? amr = null)
         {
             return BuildModel(
                 _case,
                 lc: lc,
                 mshOut: $"{caseName}/geom.msh",
                 clipToDomain: clipToDomain,
-                generateMesh: true);
+                generateMesh: true,
+                amr: amr);
         }
 
         /// <summary>
@@ -407,7 +409,8 @@ namespace electrostat
             double lc = 100.0,
             string? mshOut = "msh/geom.msh",
             bool clipToDomain = true,
-            bool generateMesh = true)
+            bool generateMesh = true,
+            AmrSettings? amr = null)
         {
             MeshGenerator gmsh = new MeshGenerator();
 
@@ -418,6 +421,11 @@ namespace electrostat
             // is identical across geometry types (only this flag varies per cut), so the
             // same build feeds an axisymmetric (r–z) or planar solve unchanged.
             mfemProblem.GeometryType = _case.GeometryType;
+
+            // Optional adaptive mesh refinement. Null leaves the solver in its previous
+            // single-solve mode; when supplied (and enabled) the solver runs its AMR loop
+            // and returns the final refined mesh through the usual results contract.
+            mfemProblem.Amr = amr;
 
             var ctx = new BuildContext
             {
