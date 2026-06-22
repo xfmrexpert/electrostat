@@ -827,12 +827,28 @@ namespace electrostat
             // a conforming boundary for gmsh.
             GeometryConditioner.SplitLinesAtIncidentPoints(geometry);
 
-            // After splitting, an electrode hole loop may now share one or more edge instances
-            // with the oil (or paper) outer boundary — e.g. a winding clipped to the bottom of
-            // the domain shares its bottom edge with bottom_bdry. Such a "hole" is no longer
-            // interior to the enclosing surface and would cause gmsh to insert orphan nodes
-            // along the shared edge. Drop those hole loops here so the remaining surface has
-            // a topologically consistent boundary.
+            // Unify abutting material holes into a single manifold union FIRST. After
+            // splitting, two distinct holes that abut along a shared edge (e.g. an angle ring
+            // sitting on the inside edge of a winding, or the adjacent-phase interphase
+            // pressboard/angle-ring pair) reference the SAME edge instance along their common
+            // face. gmsh tessellates that touching-holes pair into a non-manifold interior
+            // edge (shared by three triangles) which MFEM rejects with "Invalid mesh topology.
+            // Interior edge found between 2D elements ..." (faces_info.Elem2No < 0). Merging
+            // them into one union hole gives the oil region a manifold boundary.
+            //
+            // This MUST run BEFORE DropMergedHoleLoops: if a hole that abuts a material region
+            // also touches the domain edge (e.g. the HV winding, whose bottom edge lies on
+            // z = ZLower), splicing it into the oil outer boundary first would drag the shared
+            // winding/ring interface edges onto that boundary, leaving the angle ring as a
+            // standalone, non-manifold hole — the very failure this merge is meant to prevent.
+            GeometryConditioner.MergeAbuttingHoleLoops(geometry);
+
+            // After splitting/merging, a hole loop may still share one or more edge instances
+            // with the oil (or paper) outer boundary — e.g. a winding (or a winding∪ring union)
+            // clipped to the bottom of the domain shares its bottom edge with bottom_bdry. Such
+            // a "hole" is no longer interior to the enclosing surface and would cause gmsh to
+            // insert orphan nodes along the shared edge. Splice those shared runs into the outer
+            // boundary so the remaining surface has a topologically consistent boundary.
             GeometryConditioner.DropMergedHoleLoops(geometry);
 
             // Prune any line loops / lines / arcs that are no longer referenced by any surface.
@@ -991,7 +1007,30 @@ namespace electrostat
                 // (post-SplitLinesAtIncidentPoints) so the Distance field samples the
                 // real curves gmsh will mesh, not their pre-clip parents. Sizes are
                 // expressed relative to `lc` so this scales with the caller's request.
-                var refineEntities = new List<object>();
+                // Curvature-aware initial meshing (option A) is DISABLED here
+                // (MeshSizeFromCurvature = 0). It is a *global* size source: gmsh applies
+                // curvature-driven sizing to every curved entity and, with
+                // MeshSizeExtendFromBoundary on, grows those small fillet-driven sizes
+                // (~2*pi*r/N) inward across the whole domain. Against a domain meshed at
+                // lc, that exploded the 2D element count and gmsh blew past the 120 s
+                // timeout in MeshGenerator.GenerateMesh. Tellingly, backing off the *local*
+                // distance thresholds did nothing — the cost was this global knob, not the
+                // bounded fields below.
+                //
+                // Fillet fidelity on the initial mesh is instead carried by the targeted
+                // arc distance fields further down: they seed nodes on the true arc
+                // geometry only in a thin band around each conductor corner, so the work
+                // stays proportional to the fillets' area rather than the whole domain.
+                // Set this to a positive value (e.g. 20) only if you specifically want
+                // global curvature sizing and can afford the extra meshing cost.
+                gmsh.MeshSizeFromCurvature = 80;
+
+                // Split surviving conductor boundary sub-segments into straight lines and
+                // arcs. Lines keep the uniform lc-relative sizing; arcs get radius-aware
+                // refinement (option B) because a small fillet needs a proportionally
+                // smaller element size in its neighborhood than a large bend.
+                var refineLines = new List<object>();
+                var refineArcs = new List<GeomArc>();
                 foreach (var loop in refineLoops)
                 {
                     if (loop?.Boundary == null) continue;
@@ -1000,18 +1039,56 @@ namespace electrostat
                         // Skip segments that ended up on a truncated domain edge —
                         // they aren't really conductor boundaries.
                         if (GeometryConditioner.IsOnDomainEdge(ent, domain)) continue;
-                        refineEntities.Add(ent);
+                        if (ent is GeomArc arc)
+                            refineArcs.Add(arc);
+                        else
+                            refineLines.Add(ent);
                     }
                 }
-                if (refineEntities.Count > 0)
+
+                if (refineLines.Count > 0)
                 {
                     gmsh.AddDistanceRefinement(
-                        curves: refineEntities,
+                        curves: refineLines,
                         sizeMin: Math.Max(0.2, 0.15 * lc),
                         sizeMax: lc,
                         distMin: 0.5 * lc,
                         distMax: 6.0 * lc,
                         sampling: 100);
+                }
+
+                // Radius-bucketed arc refinement (option B): group arcs by octave of
+                // radius (powers of two) so each bucket can request an element size tied
+                // to its curvature. With the global curvature knob disabled above, these
+                // fields are now the *sole* source of fillet fidelity on the initial mesh.
+                // r*2π/20 is the arc length one element spans when 20 elements wrap a full
+                // 2π turn (~5 elements across a 90° fillet) — clamped to a [0.05, lc] band
+                // so tiny fillets stay meshable and large bends never request a size
+                // coarser than the global lc. The distance band is deliberately tight
+                // (relative to arcSize, not lc) so the fine sizing hugs the fillet instead
+                // of bleeding into the bulk mesh: the fine-element *area* scales with
+                // distMax^2 per fillet (summed over every fillet), so keeping distMax at
+                // 2.5*arcSize is what bounds the total element count — and keeps gmsh well
+                // under the 120 s generation timeout — even with many conductor corners.
+                if (refineArcs.Count > 0)
+                {
+                    foreach (var bucket in refineArcs
+                        .GroupBy(a => (int)Math.Floor(Math.Log2(Math.Max(a.Radius, 1e-9)))))
+                    {
+                        double rMin = bucket.Min(a => a.Radius);
+                        // Equivalent to Clamp(r*2π/20, 0.05, lc) but composed from Min/Max
+                        // so it can't throw when lc itself is below the 0.05 floor (very
+                        // fine global mesh): in that case the arc just inherits lc.
+                        double arcTarget = rMin * 2.0 * Math.PI / 100.0;
+                        double arcSize = Math.Min(lc, Math.Max(0.05, arcTarget));
+                        gmsh.AddDistanceRefinement(
+                            curves: bucket.Cast<object>().ToList(),
+                            sizeMin: arcSize,
+                            sizeMax: lc,
+                            distMin: 0.25 * arcSize,
+                            distMax: 2.5 * arcSize,
+                            sampling: 100);
+                    }
                 }
 
                 // Pin the outer domain boundary (core / yoke / tank / bottom) to a uniform

@@ -446,5 +446,191 @@ namespace electrostat
                 }
             }
         }
+
+        /// <summary>
+        /// In an adjacent-phase build the oil surface can list two (or more) distinct
+        /// material hole loops that share edge instances (e.g. an interphase pressboard
+        /// barrier abutting an interphase angle ring). Each material region meshes the
+        /// shared edge as a 2-triangle interface, but the oil region — seeing the same
+        /// edge on two independent holes — adds a third oil-side triangle, so gmsh emits a
+        /// non-manifold interior edge that MFEM rejects with "Invalid mesh topology.
+        /// Interior edge found between 2D elements ...".
+        ///
+        /// This pass groups holes that touch along shared edge instances and replaces each
+        /// group with a single merged hole tracing only the union perimeter (edges used by
+        /// exactly one hole in the group). Shared interface edges are dropped from the oil
+        /// hole but left on each material surface's own boundary, so those regions still
+        /// mesh and share the edge manifold-ly. Only the surface's <see cref="GeomSurface.Holes"/>
+        /// list is rewritten; the material boundary loop instances are never mutated.
+        ///
+        /// Run AFTER <see cref="SplitLinesAtIncidentPoints"/> (so abutting holes share the
+        /// same edge instances) and BEFORE <see cref="PruneUnreferencedEntities"/>.
+        /// </summary>
+        public static void MergeAbuttingHoleLoops(Geometry geom)
+        {
+            static IEnumerable<GeomPoint> Endpoints(GeomEntity e) => e switch
+            {
+                GeomLine l => new[] { l.pt1, l.pt2 },
+                GeomArc a => new[] { a.StartPt, a.EndPt },
+                _ => Array.Empty<GeomPoint>(),
+            };
+
+            foreach (var surface in geom.Surfaces)
+            {
+                if (surface.Holes.Count < 2) continue;
+
+                // edge instance -> holes that reference it. After SplitLinesAtIncidentPoints,
+                // abutting holes share the SAME line/arc instance along a common face, so a
+                // shared edge shows up in two (or more) holes' lists.
+                var holesOfEdge = new Dictionary<GeomEntity, List<GeomLineLoop>>(ReferenceEqualityComparer.Instance);
+                foreach (var hole in surface.Holes)
+                {
+                    if (hole == null) continue;
+                    foreach (var e in hole.Boundary)
+                    {
+                        if (!holesOfEdge.TryGetValue(e, out var list))
+                            holesOfEdge[e] = list = new List<GeomLineLoop>();
+                        list.Add(hole);
+                    }
+                }
+
+                // Build an adjacency graph over holes that share at least one edge instance.
+                var adjacency = new Dictionary<GeomLineLoop, HashSet<GeomLineLoop>>(ReferenceEqualityComparer.Instance);
+                foreach (var hole in surface.Holes)
+                    if (hole != null) adjacency[hole] = new HashSet<GeomLineLoop>(ReferenceEqualityComparer.Instance);
+
+                foreach (var holes in holesOfEdge.Values)
+                {
+                    if (holes.Count < 2) continue;
+                    for (int i = 0; i < holes.Count; i++)
+                        for (int j = i + 1; j < holes.Count; j++)
+                        {
+                            if (ReferenceEquals(holes[i], holes[j])) continue;
+                            adjacency[holes[i]].Add(holes[j]);
+                            adjacency[holes[j]].Add(holes[i]);
+                        }
+                }
+
+                // Walk connected components over the abutment graph; merge each multi-hole
+                // component into a single union hole.
+                var visited = new HashSet<GeomLineLoop>(ReferenceEqualityComparer.Instance);
+                var newHoles = new List<GeomLineLoop>(surface.Holes.Count);
+                bool anyMerged = false;
+
+                foreach (var hole in surface.Holes)
+                {
+                    if (hole == null || visited.Contains(hole)) continue;
+
+                    var group = new List<GeomLineLoop>();
+                    var stack = new Stack<GeomLineLoop>();
+                    stack.Push(hole);
+                    visited.Add(hole);
+                    while (stack.Count > 0)
+                    {
+                        var h = stack.Pop();
+                        group.Add(h);
+                        foreach (var nb in adjacency[h])
+                            if (visited.Add(nb)) stack.Push(nb);
+                    }
+
+                    if (group.Count < 2)
+                    {
+                        newHoles.AddRange(group);
+                        continue;
+                    }
+
+                    // Perimeter = edges used by exactly one hole in the group. Shared
+                    // interface edges (count >= 2) are interior to the union and are dropped
+                    // from the oil hole (they remain on each material surface's boundary).
+                    var edgeCount = new Dictionary<GeomEntity, int>(ReferenceEqualityComparer.Instance);
+                    foreach (var h in group)
+                        foreach (var e in h.Boundary)
+                        {
+                            edgeCount.TryGetValue(e, out int c);
+                            edgeCount[e] = c + 1;
+                        }
+                    var perimeter = edgeCount.Where(kv => kv.Value == 1).Select(kv => kv.Key).ToList();
+
+                    var cycles = OrderIntoLoops(perimeter, Endpoints);
+                    if (cycles == null)
+                    {
+                        // Could not form clean closed cycles — leave the group as separate
+                        // holes rather than emit a discontinuous loop (GmshFile would throw).
+                        Console.WriteLine("Warning: could not merge abutting oil hole loops; leaving them separate.");
+                        newHoles.AddRange(group);
+                        continue;
+                    }
+
+                    foreach (var cycle in cycles)
+                        newHoles.Add(geom.AddLineLoop(cycle.ToArray()));
+                    anyMerged = true;
+                }
+
+                if (anyMerged)
+                {
+                    surface.Holes.Clear();
+                    surface.Holes.AddRange(newHoles);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Order a flat set of edges into one or more closed loops where each successive
+        /// edge shares an endpoint (by reference) with the previous one. Returns null if the
+        /// edges cannot be partitioned into closed cycles (any vertex of degree != 2, or an
+        /// open chain), in which case the caller must not build a loop from them.
+        /// </summary>
+        private static List<List<GeomEntity>>? OrderIntoLoops(
+            List<GeomEntity> edges,
+            Func<GeomEntity, IEnumerable<GeomPoint>> endpoints)
+        {
+            if (edges.Count == 0) return null;
+
+            var incident = new Dictionary<GeomPoint, List<GeomEntity>>(ReferenceEqualityComparer.Instance);
+            foreach (var e in edges)
+                foreach (var p in endpoints(e))
+                {
+                    if (!incident.TryGetValue(p, out var list))
+                        incident[p] = list = new List<GeomEntity>();
+                    list.Add(e);
+                }
+
+            // Disjoint simple cycles require every vertex to have degree exactly 2.
+            foreach (var kv in incident)
+                if (kv.Value.Count != 2) return null;
+
+            var remaining = new HashSet<GeomEntity>(edges, ReferenceEqualityComparer.Instance);
+            var loops = new List<List<GeomEntity>>();
+
+            while (remaining.Count > 0)
+            {
+                var start = remaining.First();
+                remaining.Remove(start);
+                var cycle = new List<GeomEntity> { start };
+
+                var ends = endpoints(start).ToArray();
+                if (ends.Length != 2) return null;
+                GeomPoint startPt = ends[0];
+                GeomPoint frontier = ends[1];
+
+                while (!ReferenceEquals(frontier, startPt))
+                {
+                    GeomEntity? next = null;
+                    foreach (var cand in incident[frontier])
+                        if (remaining.Contains(cand)) { next = cand; break; }
+                    if (next == null) return null; // open chain — cannot close
+
+                    remaining.Remove(next);
+                    cycle.Add(next);
+
+                    var ne = endpoints(next).ToArray();
+                    frontier = ReferenceEquals(ne[0], frontier) ? ne[1] : ne[0];
+                }
+
+                loops.Add(cycle);
+            }
+
+            return loops;
+        }
     }
 }
