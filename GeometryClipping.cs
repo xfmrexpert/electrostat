@@ -112,54 +112,6 @@ namespace electrostat
         }
 
         /// <summary>
-        /// Clip a GeomArc to the domain. 
-        /// Note: This is a simplified implementation that checks bounding box.
-        /// For exact arc clipping, more sophisticated geometry is needed.
-        /// </summary>
-        public static GeomArc? ClipArc(GeomArc arc, Domain domain, Geometry targetGeometry)
-        {
-            // Compute simple bounding box from endpoints and radius
-            var center = arc.Center;
-            double minX = Math.Min(arc.StartPt.x, arc.EndPt.x);
-            double maxX = Math.Max(arc.StartPt.x, arc.EndPt.x);
-            double minY = Math.Min(arc.StartPt.y, arc.EndPt.y);
-            double maxY = Math.Max(arc.StartPt.y, arc.EndPt.y);
-
-            // Expand by radius for conservative bounds
-            minX = Math.Min(minX, center.x - arc.Radius);
-            maxX = Math.Max(maxX, center.x + arc.Radius);
-            minY = Math.Min(minY, center.y - arc.Radius);
-            maxY = Math.Max(maxY, center.y + arc.Radius);
-
-            // Quick reject if entirely outside
-            if (!domain.Intersects(minX, minY, maxX, maxY))
-                return null;
-
-            // Quick accept if entirely inside
-            if (domain.FullyContains(minX, minY, maxX, maxY))
-            {
-                var p1 = targetGeometry.AddPoint(arc.StartPt.x, arc.StartPt.y);
-                var p2 = targetGeometry.AddPoint(arc.EndPt.x, arc.EndPt.y);
-                return targetGeometry.AddArc(p1, p2, arc.Radius, arc.SweepAngle);
-            }
-
-            // Partial intersection - for now, clip endpoints
-            // TODO: Implement proper arc-rectangle intersection for exact clipping
-            var clampedStart = domain.Clamp(arc.StartPt.x, arc.StartPt.y);
-            var clampedEnd = domain.Clamp(arc.EndPt.x, arc.EndPt.y);
-
-            var p1Clipped = targetGeometry.AddPoint(clampedStart.r, clampedStart.z);
-            var p2Clipped = targetGeometry.AddPoint(clampedEnd.r, clampedEnd.z);
-
-            // If arc becomes degenerate, return null
-            if (Math.Abs(p1Clipped.x - p2Clipped.x) < 1e-9 && 
-                Math.Abs(p1Clipped.y - p2Clipped.y) < 1e-9)
-                return null;
-
-            return targetGeometry.AddArc(p1Clipped, p2Clipped, arc.Radius, arc.SweepAngle);
-        }
-
-        /// <summary>
         /// Clip a single edge of a polygon against one domain boundary using Sutherland-Hodgman.
         /// </summary>
         private static List<GeomPoint> ClipPolygonEdge(
