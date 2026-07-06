@@ -50,6 +50,15 @@ namespace electrostat
 
         /// <summary>Direction of integration relative to E.</summary>
         public TraceDirection Direction { get; set; } = TraceDirection.Backward;
+
+        /// <summary>
+        /// When a step crosses from one material (physical tag) into another, bisect the
+        /// step to locate the interface and record a sample on each side of it. This snaps
+        /// the recorded material transition onto the true element/material boundary instead
+        /// of leaving it up to half a step away, and captures the field's discontinuity at
+        /// dielectric interfaces. Set to 0 to disable.
+        /// </summary>
+        public int MaterialInterfaceBisections { get; set; } = 20;
     }
 
     /// <summary>
@@ -173,6 +182,7 @@ namespace electrostat
                     break;
                 }
 
+                double pxPrev = x, pyPrev = y, sPrev = s;
                 x = nx;
                 y = ny;
                 s += Math.Sqrt(dx * dx + dy * dy);
@@ -180,6 +190,16 @@ namespace electrostat
                 // Sample at the new location for the recorded point and field-floor test.
                 if (!TrySampleUnit(x, y, sign, out var sample))
                 { reason = TraceTerminationReason.ExitedDomain; break; }
+
+                // If this step crossed a material boundary, bisect it to pin the transition
+                // onto the true interface and record the (discontinuous) field on each side,
+                // instead of leaving the transition up to half a step away.
+                int prevTag = pts[pts.Count - 1].MaterialTag;
+                if (_options.MaterialInterfaceBisections > 0 &&
+                    sample.Point.MaterialTag != prevTag)
+                {
+                    InsertMaterialInterface(pts, pxPrev, pyPrev, prevTag, sPrev, x, y, sign);
+                }
 
                 if (sample.Magnitude < _options.MinFieldMagnitude)
                 {
@@ -204,6 +224,59 @@ namespace electrostat
                 TerminationReason = reason,
                 HitSurfaceId = hitSurfaceId,
             };
+        }
+
+        /// <summary>
+        /// Bisects the straight segment (ax,ay)→(bx,by), which crosses from material
+        /// <paramref name="tagA"/> into a different material, to locate the interface, then
+        /// appends two samples straddling it: the last point still in <paramref name="tagA"/>
+        /// and the first point on the far side. Both are placed at the interface arc length
+        /// so the transition is recorded exactly on the boundary and the field's
+        /// discontinuity there is preserved. The caller still appends the segment's endpoint
+        /// afterwards.
+        /// </summary>
+        private void InsertMaterialInterface(
+            List<StreamlinePoint> pts,
+            double ax, double ay, int tagA, double sA,
+            double bx, double by, double sign)
+        {
+            // Binary search for the parameter t in (0,1] where the tag first changes from
+            // tagA. lo stays in tagA; hi is on the far side.
+            double lo = 0.0, hi = 1.0;
+            double loX = ax, loY = ay;
+            double hiX = bx, hiY = by;
+            for (int i = 0; i < _options.MaterialInterfaceBisections; i++)
+            {
+                double mid = 0.5 * (lo + hi);
+                double mx = ax + mid * (bx - ax);
+                double my = ay + mid * (by - ay);
+                if (_sampler.TryEvaluateE(mx, my, out _, out _, out _, out int mtag) && mtag == tagA)
+                {
+                    lo = mid; loX = mx; loY = my;
+                }
+                else
+                {
+                    hi = mid; hiX = mx; hiY = my;
+                }
+            }
+
+            // Arc length at the interface (measured along the straight step from a).
+            double segLen = Math.Sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay));
+            double sInterface = sA + segLen * hi;
+
+            // Near side: last sample still inside tagA.
+            if (TrySampleUnit(loX, loY, sign, out var nearSample) &&
+                nearSample.Point.MaterialTag == tagA)
+            {
+                pts.Add(nearSample.Point with { X = loX, Y = loY, ArcLength = sInterface });
+            }
+
+            // Far side: first sample across the interface. Recorded at the same arc length
+            // so the pair marks a zero-length jump exactly on the boundary.
+            if (TrySampleUnit(hiX, hiY, sign, out var farSample))
+            {
+                pts.Add(farSample.Point with { X = hiX, Y = hiY, ArcLength = sInterface });
+            }
         }
 
         /// <summary>
