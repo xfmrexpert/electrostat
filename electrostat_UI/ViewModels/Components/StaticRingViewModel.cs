@@ -19,6 +19,17 @@ namespace electrostat_UI.ViewModels.Components
         [ObservableProperty] private double _rBL;
         [ObservableProperty] private double _tPaper;
         [ObservableProperty] private double _voltage;
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(HasPermittivityError))]
+        [NotifyPropertyChangedFor(nameof(PermittivityValidationMessage))]
+        private double _paperRelativePermittivity =
+            DielectricDefaults.SolidInsulationRelativePermittivity;
+
+        public bool HasPermittivityError => PaperRelativePermittivity <= 0;
+
+        public string PermittivityValidationMessage => HasPermittivityError
+            ? "Paper relative permittivity must be greater than zero."
+            : string.Empty;
 
         /// <summary>
         /// Name of the winding this ring is nested beneath, or <see cref="NoneWinding"/>
@@ -28,6 +39,7 @@ namespace electrostat_UI.ViewModels.Components
         [ObservableProperty]
         [NotifyPropertyChangedFor(nameof(IsVoltageInherited))]
         [NotifyPropertyChangedFor(nameof(IsVoltageEditable))]
+        [NotifyPropertyChangedFor(nameof(InheritedVoltageText))]
         private string _parentWinding = NoneWinding;
 
         /// <summary>
@@ -42,6 +54,10 @@ namespace electrostat_UI.ViewModels.Components
 
         /// <summary>True when the ring's own <see cref="Voltage"/> is used (not inherited).</summary>
         public bool IsVoltageEditable => !IsVoltageInherited;
+
+        public string InheritedVoltageText => IsVoltageInherited
+            ? $"Voltage is inherited from winding “{ParentWinding}”."
+            : string.Empty;
 
         public StaticRingViewModel() { Name = "StaticRing"; }
 
@@ -58,11 +74,12 @@ namespace electrostat_UI.ViewModels.Components
             _rBL = sr.RBL;
             _tPaper = sr.TPaper;
             _voltage = voltage;
+            _paperRelativePermittivity = sr.PaperRelativePermittivity;
             _parentWinding = string.IsNullOrEmpty(sr.ParentWinding) ? NoneWinding : sr.ParentWinding;
         }
 
         public StaticRing ToModel() =>
             new(Name, R0, ZBottom, Width, Height, RTL, RTR, RBR, RBL, TPaper,
-                ParentWinding == NoneWinding ? null : ParentWinding);
+                ParentWinding == NoneWinding ? null : ParentWinding, PaperRelativePermittivity);
     }
 }

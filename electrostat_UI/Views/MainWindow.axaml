@@ -10,7 +10,9 @@
         x:Class="electrostat_UI.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Icon="/Assets/avalonia-logo.ico"
-        Title="{Binding WindowTitle}">
+        Title="{Binding WindowTitle}"
+        MinWidth="900" MinHeight="600"
+        Width="1280" Height="820">
 
     <Design.DataContext>
         <vm:MainWindowViewModel/>
@@ -18,6 +20,9 @@
 
     <Window.DataTemplates>
         <!-- Auto-pick the right editor view for whatever SelectedComponent is. -->
+        <DataTemplate DataType="vm:TransformerViewModel">
+            <cviews:TransformerEditorView/>
+        </DataTemplate>
         <DataTemplate DataType="cvm:DomainViewModel">
             <cviews:DomainEditorView/>
         </DataTemplate>
@@ -37,31 +42,33 @@
             <cviews:CutEditorView/>
         </DataTemplate>
         <DataTemplate DataType="vm:VoltageScenarioViewModel">
-            <StackPanel Spacing="4">
-                <TextBlock Text="Voltage Scenario" FontWeight="SemiBold"/>
-                <Grid ColumnDefinitions="Auto,*" RowSpacing="2" ColumnSpacing="6">
-                    <TextBlock Grid.Column="0" Text="Name" VerticalAlignment="Center"/>
-                    <TextBox Grid.Column="1" Text="{Binding Name, UpdateSourceTrigger=LostFocus}"/>
+            <StackPanel Spacing="8">
+                <TextBlock Classes="page-title" Text="Voltage Scenario"/>
+                <TextBlock Classes="section-title" Text="General"/>
+                <Grid Classes="form-grid" ColumnDefinitions="*,*">
+                    <TextBlock Grid.Column="0" Classes="form-label" Text="Name"/>
+                    <TextBox Grid.Column="1" Classes="form-control" Text="{Binding Name, UpdateSourceTrigger=LostFocus}"/>
                 </Grid>
-                <TextBlock Text="Winding voltages (V)" FontWeight="SemiBold" Margin="0,6,0,0"/>
+                <TextBlock Classes="section-title" Text="Winding Voltages" Margin="0,8,0,0"/>
                 <ItemsControl ItemsSource="{Binding Cells}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="vm:ScenarioVoltageCell">
-                            <Grid ColumnDefinitions="Auto,*" RowSpacing="2" ColumnSpacing="6" Margin="0,1">
+                            <Grid Classes="form-grid" ColumnDefinitions="*,110,Auto" Margin="0,1">
                                 <TextBlock Grid.Column="0" Text="{Binding WindingName}"
                                            VerticalAlignment="Center" MinWidth="70"/>
-                                <NumericUpDown Grid.Column="1" Value="{Binding Voltage}"/>
+                                <NumericUpDown Grid.Column="1" Classes="form-control" Value="{Binding Voltage}"/>
+                                <TextBlock Grid.Column="2" Classes="form-unit" Text="V"/>
                             </Grid>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
-                <TextBlock FontStyle="Italic" FontSize="11" Foreground="Gray" TextWrapping="Wrap"
+                <TextBlock Classes="help-text"
                            Text="Nested static rings inherit their parent winding's voltage."/>
             </StackPanel>
         </DataTemplate>
     </Window.DataTemplates>
 
-    <Grid RowDefinitions="Auto,*,Auto">
+    <Grid RowDefinitions="Auto,Auto,*,Auto">
         <Menu Grid.Row="0">
             <MenuItem Header="_File">
                 <MenuItem Header="_New" Command="{Binding NewCommand}" HotKey="Ctrl+N" InputGesture="Ctrl+N"/>
@@ -96,62 +103,200 @@
                 <MenuItem Header="Add Sc_enario" Command="{Binding AddScenarioCommand}"/>
                 <MenuItem Header="Add _Cut" Command="{Binding AddCutCommand}"/>
                 <Separator/>
-                <MenuItem Header="_Remove Selected" Command="{Binding RemoveSelectedCommand}"/>
+                <MenuItem Header="_Remove Selected" Command="{Binding RemoveSelectedCommand}" HotKey="Delete"/>
             </MenuItem>
             <MenuItem Header="_Run">
-                <MenuItem Header="Solve _Cut" Command="{Binding SolveCutCommand}"/>
-                <MenuItem Header="Solve _All Cuts" Command="{Binding SolveAllCutsCommand}"/>
+                <MenuItem Header="Solve _Cut" Command="{Binding SolveCutCommand}" HotKey="F5"/>
+                <MenuItem Header="Solve _All Cuts" Command="{Binding SolveAllCutsCommand}" HotKey="Ctrl+F5"/>
                 <Separator/>
                 <MenuItem Header="Adaptive _Mesh Refinement"
                           ToggleType="CheckBox"
                           IsChecked="{Binding UseAdaptiveRefinement, Mode=TwoWay}"/>
             </MenuItem>
+            <MenuItem Header="_View">
+                <MenuItem Header="_Design Workspace" Command="{Binding ShowDesignWorkspaceCommand}" HotKey="Ctrl+1"/>
+                <MenuItem Header="_Results Workspace" Command="{Binding ShowResultsWorkspaceCommand}" HotKey="Ctrl+2"/>
+                <Separator/>
+                <MenuItem Header="Model _Explorer" ToggleType="CheckBox"
+                          IsChecked="{Binding IsExplorerVisible, Mode=TwoWay}"/>
+                <MenuItem Header="_Inspector" ToggleType="CheckBox"
+                          IsChecked="{Binding IsInspectorVisible, Mode=TwoWay}"/>
+            </MenuItem>
         </Menu>
 
-        <TabControl Grid.Row="1" SelectedIndex="{Binding ActiveTabIndex, Mode=TwoWay}">
+        <Border Grid.Row="1" Background="{DynamicResource PaneBackgroundBrush}"
+                BorderBrush="{DynamicResource SubtleBorderBrush}" BorderThickness="0,0,0,1"
+                Padding="8,6">
+            <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto" ColumnSpacing="6">
+                <Button Grid.Column="0" Classes="command" Content="New" Command="{Binding NewCommand}" HotKey="Ctrl+N"/>
+                <Button Grid.Column="1" Classes="command" Content="Open…" Command="{Binding OpenCommand}" HotKey="Ctrl+O"/>
+                <Button Grid.Column="2" Classes="command" Content="Save" Command="{Binding SaveCommand}" HotKey="Ctrl+S"/>
+                <Button Grid.Column="3" Classes="command" Content="Add…">
+                    <Button.Flyout>
+                        <MenuFlyout>
+                            <MenuItem Header="Winding" Command="{Binding AddWindingCommand}"/>
+                            <MenuItem Header="Pressboard" Command="{Binding AddPressboardCommand}"/>
+                            <MenuItem Header="Angle Ring" Command="{Binding AddAngleRingCommand}"/>
+                            <MenuItem Header="Static Ring" Command="{Binding AddStaticRingCommand}"/>
+                            <Separator/>
+                            <MenuItem Header="Voltage Scenario" Command="{Binding AddScenarioCommand}"/>
+                            <MenuItem Header="Cut" Command="{Binding AddCutCommand}"/>
+                        </MenuFlyout>
+                    </Button.Flyout>
+                </Button>
+
+                <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="6">
+                    <Button Classes="primary-command" Content="Solve Cut" Command="{Binding SolveCutCommand}" HotKey="F5"/>
+                    <Button Classes="command" Content="Solve All" Command="{Binding SolveAllCutsCommand}" HotKey="Ctrl+F5"/>
+                </StackPanel>
+
+                <Border Grid.Column="6" Classes="subtle-pane" Padding="3">
+                    <StackPanel Orientation="Horizontal" Spacing="2">
+                        <Button Classes="command" Content="Design" Command="{Binding ShowDesignWorkspaceCommand}"
+                                FontWeight="{Binding IsDesignWorkspace, Converter={x:Static vm:BoolToWeightConverter.Instance}}"/>
+                        <Button Classes="command" Content="Results" Command="{Binding ShowResultsWorkspaceCommand}"
+                                FontWeight="{Binding IsResultsWorkspace, Converter={x:Static vm:BoolToWeightConverter.Instance}}"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
+
+        <TabControl Grid.Row="2" SelectedIndex="{Binding ActiveTabIndex, Mode=TwoWay}">
             <TabItem Header="Design">
-                <Grid ColumnDefinitions="260,4,280,*">
-                    <Grid Grid.Column="0" Margin="8" RowDefinitions="Auto,*">
-                        <TextBlock Grid.Row="0" Text="Case" FontWeight="SemiBold" Margin="0,0,0,4"/>
-                        <TreeView Grid.Row="1"
-                                  ItemsSource="{Binding CaseTree}"
-                                  SelectedItem="{Binding SelectedTreeNode, Mode=TwoWay}">
-                            <TreeView.Styles>
-                                <!-- Bind each container's expansion to the node so it survives rebuilds. -->
-                                <Style Selector="TreeViewItem" x:DataType="vm:CaseTreeNode">
-                                    <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
-                                </Style>
-                            </TreeView.Styles>
-                            <TreeView.ItemTemplate>
-                                <TreeDataTemplate ItemsSource="{Binding Children}"
-                                                  x:DataType="vm:CaseTreeNode">
-                                    <TextBlock Text="{Binding Name}"/>
-                                </TreeDataTemplate>
-                            </TreeView.ItemTemplate>
-                        </TreeView>
-                    </Grid>
+                <Grid ColumnDefinitions="Auto,4,*,4,Auto" Margin="8">
+                    <Border Grid.Column="0" Classes="pane" Width="250" MinWidth="190" MaxWidth="420"
+                            IsVisible="{Binding IsExplorerVisible}">
+                        <Grid RowDefinitions="Auto,*,Auto">
+                            <Grid Grid.Row="0" ColumnDefinitions="*,Auto">
+                                <TextBlock Classes="section-title" Text="Model Explorer"/>
+                                <Button Grid.Column="1" Content="‹" ToolTip.Tip="Collapse model explorer"
+                                        Command="{Binding ToggleExplorerCommand}"/>
+                            </Grid>
+                            <TreeView Grid.Row="1"
+                                      ItemsSource="{Binding CaseTree}"
+                                      SelectedItem="{Binding SelectedTreeNode, Mode=TwoWay}">
+                                <TreeView.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="Add">
+                                            <MenuItem Header="Winding" Command="{Binding AddWindingCommand}"/>
+                                            <MenuItem Header="Pressboard" Command="{Binding AddPressboardCommand}"/>
+                                            <MenuItem Header="Angle Ring" Command="{Binding AddAngleRingCommand}"/>
+                                            <MenuItem Header="Static Ring" Command="{Binding AddStaticRingCommand}"/>
+                                            <Separator/>
+                                            <MenuItem Header="Voltage Scenario" Command="{Binding AddScenarioCommand}"/>
+                                            <MenuItem Header="Cut" Command="{Binding AddCutCommand}"/>
+                                        </MenuItem>
+                                        <Separator/>
+                                        <MenuItem Header="Remove Selected" Command="{Binding RemoveSelectedCommand}"/>
+                                    </ContextMenu>
+                                </TreeView.ContextMenu>
+                                <TreeView.Styles>
+                                    <Style Selector="TreeViewItem" x:DataType="vm:CaseTreeNode">
+                                        <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+                                    </Style>
+                                </TreeView.Styles>
+                                <TreeView.ItemTemplate>
+                                    <TreeDataTemplate ItemsSource="{Binding Children}" x:DataType="vm:CaseTreeNode">
+                                        <TextBlock Text="{Binding Name}"/>
+                                    </TreeDataTemplate>
+                                </TreeView.ItemTemplate>
+                            </TreeView>
+                            <Grid Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="6" Margin="0,8,0,0">
+                                <Button Grid.Column="0" Classes="command" Content="Add component…"
+                                        HorizontalAlignment="Stretch">
+                                    <Button.Flyout>
+                                        <MenuFlyout>
+                                            <MenuItem Header="Winding" Command="{Binding AddWindingCommand}"/>
+                                            <MenuItem Header="Pressboard" Command="{Binding AddPressboardCommand}"/>
+                                            <MenuItem Header="Angle Ring" Command="{Binding AddAngleRingCommand}"/>
+                                            <MenuItem Header="Static Ring" Command="{Binding AddStaticRingCommand}"/>
+                                            <Separator/>
+                                            <MenuItem Header="Voltage Scenario" Command="{Binding AddScenarioCommand}"/>
+                                            <MenuItem Header="Cut" Command="{Binding AddCutCommand}"/>
+                                        </MenuFlyout>
+                                    </Button.Flyout>
+                                </Button>
+                                <Button Grid.Column="1" Classes="command" Content="Remove"
+                                        Command="{Binding RemoveSelectedCommand}"
+                                        ToolTip.Tip="Remove the selected component, scenario, or cut"/>
+                            </Grid>
+                        </Grid>
+                    </Border>
 
-                    <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Stretch"
-                                  Background="Transparent"/>
+                    <GridSplitter Grid.Column="1" Classes="workspace-splitter" Width="4"
+                                  HorizontalAlignment="Stretch" IsVisible="{Binding IsExplorerVisible}"/>
 
-                    <Grid Grid.Column="2" Margin="8" RowDefinitions="Auto,*,Auto">
-                        <TextBlock Grid.Row="0" Text="Details" FontWeight="SemiBold" Margin="0,0,0,4"/>
-                        <Border Grid.Row="1" BorderBrush="Gray" BorderThickness="1" Padding="8">
-                            <ScrollViewer>
+                    <Border Grid.Column="2" Classes="pane" Padding="0" Margin="8,0">
+                        <Grid RowDefinitions="Auto,*">
+                            <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="12,8">
+                                <TextBlock Classes="section-title" Text="Geometry" Margin="0"/>
+                                <TextBlock Grid.Column="1" Classes="secondary" Text="{Binding SelectedCut.Name}"
+                                           Margin="10,0" VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
+                                    <Button Content="Show Explorer" Command="{Binding ToggleExplorerCommand}"
+                                            IsVisible="{Binding IsExplorerHidden}"/>
+                                    <Button Content="Show Inspector" Command="{Binding ToggleInspectorCommand}"
+                                            IsVisible="{Binding IsInspectorHidden}"/>
+                                </StackPanel>
+                            </Grid>
+                            <Grid Grid.Row="1">
+                                <views:GeometryView x:Name="GeometryCanvas" Geometry="{Binding CurrentGeometry}"
+                                                    HighlightedSurfaces="{Binding HighlightedSurfaces}"
+                                                    SurfaceCategories="{Binding SurfaceCategories}"
+                                                    AutomationProperties.Name="Transformer geometry canvas"/>
+                                <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Right"
+                                            VerticalAlignment="Top" Margin="10">
+                                    <Button Content="−" Click="ZoomGeometryOut" ToolTip.Tip="Zoom out" AutomationProperties.Name="Zoom geometry out"/>
+                                    <Button Content="+" Click="ZoomGeometryIn" ToolTip.Tip="Zoom in" AutomationProperties.Name="Zoom geometry in"/>
+                                    <Button Content="Fit" Click="FitGeometry" ToolTip.Tip="Fit geometry to the canvas" AutomationProperties.Name="Fit geometry to canvas"/>
+                                    <ToggleButton Content="Legend" IsChecked="{Binding IsGeometryLegendVisible, Mode=TwoWay}"/>
+                                </StackPanel>
+                                <Border Classes="subtle-pane" HorizontalAlignment="Left" VerticalAlignment="Top"
+                                        Margin="10" IsVisible="{Binding IsGeometryLegendVisible}">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="Surface legend" FontWeight="SemiBold"/>
+                                        <TextBlock Text="■  Winding (copper)"/>
+                                        <TextBlock Text="■  Pressboard / angle ring"/>
+                                        <TextBlock Text="■  Static-ring paper / metal"/>
+                                        <TextBlock Text="■  Oil domain"/>
+                                    </StackPanel>
+                                </Border>
+                                <Border Classes="subtle-pane" HorizontalAlignment="Left" VerticalAlignment="Bottom"
+                                        Margin="10" IsVisible="{Binding HasCurrentGeometry}">
+                                    <TextBlock Text="{Binding #GeometryCanvas.PointerCoordinateText}" FontFamily="Consolas"/>
+                                </Border>
+                                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
+                                            IsVisible="{Binding HasNoCurrentGeometry}">
+                                    <TextBlock Text="No geometry available" FontSize="16" FontWeight="SemiBold"
+                                               HorizontalAlignment="Center"/>
+                                    <TextBlock Classes="help-text" Margin="0,6,0,0" TextAlignment="Center"
+                                               Text="Add or select a cut, then correct any model errors shown in the status bar."/>
+                                </StackPanel>
+                            </Grid>
+                        </Grid>
+                    </Border>
+
+                    <GridSplitter Grid.Column="3" Classes="workspace-splitter" Width="4"
+                                  HorizontalAlignment="Stretch" IsVisible="{Binding IsInspectorVisible}"/>
+
+          <Border Grid.Column="4" Classes="pane inspector-pane" Width="320" MinWidth="240" MaxWidth="480"
+                            IsVisible="{Binding IsInspectorVisible}">
+                        <Grid RowDefinitions="Auto,*">
+                            <Grid Grid.Row="0" ColumnDefinitions="*,Auto">
+                                <TextBlock Classes="section-title" Text="Inspector"/>
+                                <Button Grid.Column="1" Content="›" ToolTip.Tip="Collapse inspector"
+                                        Command="{Binding ToggleInspectorCommand}"/>
+                            </Grid>
+                            <ScrollViewer Grid.Row="1" IsVisible="{Binding HasSelectedComponent}">
                                 <ContentControl Content="{Binding SelectedComponent}"/>
                             </ScrollViewer>
-                        </Border>
-
-                        <ProgressBar Grid.Row="2" IsIndeterminate="True"
-                                     IsVisible="{Binding IsSolving}"
-                                     Height="6" Margin="0,6,0,0"/>
-                    </Grid>
-
-                    <Border Grid.Column="3" Margin="8"
-                            BorderBrush="Gray" BorderThickness="1">
-                        <views:GeometryView Geometry="{Binding CurrentGeometry}"
-                                            HighlightedSurfaces="{Binding HighlightedSurfaces}"
-                                            SurfaceCategories="{Binding SurfaceCategories}"/>
+                            <StackPanel Grid.Row="1" VerticalAlignment="Center" Margin="20"
+                                        IsVisible="{Binding HasNoSelectedComponent}">
+                                <TextBlock Text="Nothing selected" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                                <TextBlock Classes="help-text" Margin="0,6,0,0" TextAlignment="Center"
+                                           Text="Select an item in the Model Explorer to view and edit its properties."/>
+                            </StackPanel>
+                        </Grid>
                     </Border>
                 </Grid>
             </TabItem>
@@ -161,9 +306,23 @@
             </TabItem>
         </TabControl>
 
-        <TextBlock Grid.Row="2"
-                   Margin="12,4"
-                   Text="{Binding StatusMessage}"/>
+        <Border Grid.Row="3" Classes="status-region">
+            <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="12">
+                <TextBlock Grid.Column="0" Text="{Binding DocumentStateText}" FontWeight="SemiBold"
+                           VerticalAlignment="Center"/>
+                <Border Grid.Column="1" Classes="subtle-pane" Padding="6,2">
+                    <TextBlock Text="{Binding StatusIndicator}" FontSize="11" FontWeight="SemiBold"
+                               VerticalAlignment="Center"/>
+                </Border>
+                <TextBlock Grid.Column="2" Text="{Binding StatusMessage}" Classes="secondary"
+                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="8"
+                            IsVisible="{Binding IsSolving}">
+                    <TextBlock Text="{Binding SolveOperationText}" VerticalAlignment="Center"/>
+                    <ProgressBar IsIndeterminate="True" Width="120" Height="6" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Grid>
+        </Border>
     </Grid>
 
 </Window>

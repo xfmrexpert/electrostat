@@ -6,17 +6,24 @@
 			 mc:Ignorable="d" d:DesignWidth="260" d:DesignHeight="160"
 			 x:Class="electrostat_UI.Views.Components.DomainEditorView"
 			 x:DataType="cvm:DomainViewModel">
-	<StackPanel Spacing="4">
-		<TextBlock Text="Domain" FontWeight="SemiBold"/>
-		<Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="2" ColumnSpacing="6">
-			<TextBlock Grid.Row="0" Grid.Column="0" Text="R inner" VerticalAlignment="Center"/>
-			<NumericUpDown Grid.Row="0" Grid.Column="1" Value="{Binding RInner}"/>
-			<TextBlock Grid.Row="1" Grid.Column="0" Text="R outer" VerticalAlignment="Center"/>
-			<NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding ROuter}"/>
-			<TextBlock Grid.Row="2" Grid.Column="0" Text="Z lower" VerticalAlignment="Center"/>
-			<NumericUpDown Grid.Row="2" Grid.Column="1" Value="{Binding ZLower}"/>
-			<TextBlock Grid.Row="3" Grid.Column="0" Text="Z upper" VerticalAlignment="Center"/>
-			<NumericUpDown Grid.Row="3" Grid.Column="1" Value="{Binding ZUpper}"/>
+	<StackPanel Spacing="8">
+		<TextBlock Classes="page-title" Text="Cut Domain"/>
+		<TextBlock Classes="help-text" Text="Radial (r) and axial (z) limits of the solved region."/>
+		<Grid Classes="form-grid" ColumnDefinitions="*,110,Auto" RowDefinitions="Auto,Auto,Auto,Auto">
+			<TextBlock Grid.Row="0" Classes="form-label" Text="Inner radius"/>
+			<NumericUpDown Grid.Row="0" Grid.Column="1" Classes="form-control" Value="{Binding RInner}"/>
+			<TextBlock Grid.Row="0" Grid.Column="2" Classes="form-unit" Text="mm"/>
+			<TextBlock Grid.Row="1" Classes="form-label" Text="Outer radius"/>
+			<NumericUpDown Grid.Row="1" Grid.Column="1" Classes="form-control" Value="{Binding ROuter}"/>
+			<TextBlock Grid.Row="1" Grid.Column="2" Classes="form-unit" Text="mm"/>
+			<TextBlock Grid.Row="2" Classes="form-label" Text="Lower axial position"/>
+			<NumericUpDown Grid.Row="2" Grid.Column="1" Classes="form-control" Value="{Binding ZLower}"/>
+			<TextBlock Grid.Row="2" Grid.Column="2" Classes="form-unit" Text="mm"/>
+			<TextBlock Grid.Row="3" Classes="form-label" Text="Upper axial position"/>
+			<NumericUpDown Grid.Row="3" Grid.Column="1" Classes="form-control" Value="{Binding ZUpper}"/>
+			<TextBlock Grid.Row="3" Grid.Column="2" Classes="form-unit" Text="mm"/>
 		</Grid>
+		<TextBlock Classes="validation-error" IsVisible="{Binding HasValidationError}"
+				   Text="{Binding ValidationMessage}"/>
 	</StackPanel>
 </UserControl>

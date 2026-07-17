@@ -6,35 +6,41 @@
 			 mc:Ignorable="d" d:DesignWidth="260" d:DesignHeight="400"
 			 x:Class="electrostat_UI.Views.Components.AngleRingEditorView"
 			 x:DataType="cvm:AngleRingViewModel">
-	<StackPanel Spacing="4">
-		<TextBlock Text="Angle Ring" FontWeight="SemiBold"/>
-		<Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="2" ColumnSpacing="6">
+	<StackPanel Spacing="8">
+		<TextBlock Classes="page-title" Text="Angle Ring"/>
+		<TextBlock Classes="section-title" Text="General and Geometry"/>
+		<Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="2" ColumnSpacing="6">
 			<TextBlock Grid.Row="0" Grid.Column="0" Text="Name" VerticalAlignment="Center"/>
 			<TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Name, UpdateSourceTrigger=LostFocus}"/>
-			<TextBlock Grid.Row="1" Grid.Column="0" Text="R0" VerticalAlignment="Center"/>
+			<TextBlock Grid.Row="1" Grid.Column="0" Text="Corner radius position (mm)" VerticalAlignment="Center"/>
 			<NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding R0}"/>
-			<TextBlock Grid.Row="2" Grid.Column="0" Text="Z corner" VerticalAlignment="Center"/>
+			<TextBlock Grid.Row="2" Grid.Column="0" Text="Corner axial position (mm)" VerticalAlignment="Center"/>
 			<NumericUpDown Grid.Row="2" Grid.Column="1" Value="{Binding ZCorner}"/>
-			<TextBlock Grid.Row="3" Grid.Column="0" Text="Tv" VerticalAlignment="Center"/>
+			<TextBlock Grid.Row="3" Grid.Column="0" Text="Vertical thickness (mm)" VerticalAlignment="Center"/>
 			<NumericUpDown Grid.Row="3" Grid.Column="1" Value="{Binding Tv}"/>
-			<TextBlock Grid.Row="4" Grid.Column="0" Text="Hv" VerticalAlignment="Center"/>
+			<TextBlock Grid.Row="4" Grid.Column="0" Text="Vertical height (mm)" VerticalAlignment="Center"/>
 			<NumericUpDown Grid.Row="4" Grid.Column="1" Value="{Binding Hv}"/>
-			<TextBlock Grid.Row="5" Grid.Column="0" Text="Th" VerticalAlignment="Center"/>
+			<TextBlock Grid.Row="5" Grid.Column="0" Text="Horizontal thickness (mm)" VerticalAlignment="Center"/>
 			<NumericUpDown Grid.Row="5" Grid.Column="1" Value="{Binding Th}"/>
-			<TextBlock Grid.Row="6" Grid.Column="0" Text="Wh" VerticalAlignment="Center"/>
+			<TextBlock Grid.Row="6" Grid.Column="0" Text="Horizontal width (mm)" VerticalAlignment="Center"/>
 			<NumericUpDown Grid.Row="6" Grid.Column="1" Value="{Binding Wh}"/>
-			<TextBlock Grid.Row="7" Grid.Column="0" Text="Fillet R" VerticalAlignment="Center"/>
+			<TextBlock Grid.Row="7" Grid.Column="0" Text="Inside fillet radius (mm)" VerticalAlignment="Center"/>
 			<NumericUpDown Grid.Row="7" Grid.Column="1" Value="{Binding InsideFilletR}"/>
+			<TextBlock Grid.Row="8" Grid.Column="0" Text="Relative permittivity (εᵣ)" VerticalAlignment="Center"
+					   ToolTip.Tip="Dimensionless dielectric constant used for this angle-ring region."/>
+			<NumericUpDown Grid.Row="8" Grid.Column="1" Value="{Binding RelativePermittivity}" FormatString="0.###"/>
 		</Grid>
+		<TextBlock Classes="validation-error" IsVisible="{Binding HasPermittivityError}"
+				   Text="{Binding PermittivityValidationMessage}"/>
 
-		<Border BorderBrush="#DDDDDD" BorderThickness="1" CornerRadius="3" Padding="6">
+		<Expander Classes="inspector-section" Header="Advanced — Vertical-tip taper" IsExpanded="False">
 			<StackPanel Spacing="2">
-				<CheckBox Content="V-tip taper" IsChecked="{Binding TaperVTip.Enabled}"/>
+				<CheckBox Content="Enable vertical-tip taper" IsChecked="{Binding TaperVTip.Enabled}"/>
 				<Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="2" ColumnSpacing="6"
 					  IsEnabled="{Binding TaperVTip.Enabled}">
-					<TextBlock Grid.Row="0" Grid.Column="0" Text="Length" VerticalAlignment="Center"/>
+					<TextBlock Grid.Row="0" Grid.Column="0" Text="Length (mm)" VerticalAlignment="Center"/>
 					<NumericUpDown Grid.Row="0" Grid.Column="1" Value="{Binding TaperVTip.Length}"/>
-					<TextBlock Grid.Row="1" Grid.Column="0" Text="End thick" VerticalAlignment="Center"/>
+					<TextBlock Grid.Row="1" Grid.Column="0" Text="End thickness (mm)" VerticalAlignment="Center"/>
 					<NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding TaperVTip.EndThickness}"/>
 					<TextBlock Grid.Row="2" Grid.Column="0" Text="Side" VerticalAlignment="Center"/>
 					<ComboBox Grid.Row="2" Grid.Column="1" HorizontalAlignment="Stretch"
@@ -42,6 +48,6 @@
 							  SelectedItem="{Binding TaperVTip.Side}"/>
 				</Grid>
 			</StackPanel>
-		</Border>
+		</Expander>
 	</StackPanel>
 </UserControl>

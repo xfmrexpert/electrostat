@@ -1,0 +1,221 @@
+<Styles xmlns="https://github.com/avaloniaui"
+		xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+	<Styles.Resources>
+		<ResourceDictionary>
+			<ResourceDictionary.ThemeDictionaries>
+				<ResourceDictionary x:Key="Light">
+					<SolidColorBrush x:Key="AppBackgroundBrush" Color="#F5F7FA"/>
+					<SolidColorBrush x:Key="PaneBackgroundBrush" Color="#FFFFFF"/>
+					<SolidColorBrush x:Key="PaneAlternateBrush" Color="#F0F3F7"/>
+					<SolidColorBrush x:Key="SubtleBorderBrush" Color="#D5DAE2"/>
+					<SolidColorBrush x:Key="SecondaryTextBrush" Color="#5D6673"/>
+					<SolidColorBrush x:Key="AccentSurfaceBrush" Color="#E7F1FF"/>
+					<SolidColorBrush x:Key="SuccessBrush" Color="#107C41"/>
+					<SolidColorBrush x:Key="WarningBrush" Color="#9D5D00"/>
+					<SolidColorBrush x:Key="ErrorBrush" Color="#C42B1C"/>
+				</ResourceDictionary>
+				<ResourceDictionary x:Key="Dark">
+					<SolidColorBrush x:Key="AppBackgroundBrush" Color="#17191C"/>
+					<SolidColorBrush x:Key="PaneBackgroundBrush" Color="#202328"/>
+					<SolidColorBrush x:Key="PaneAlternateBrush" Color="#292D33"/>
+					<SolidColorBrush x:Key="SubtleBorderBrush" Color="#414750"/>
+					<SolidColorBrush x:Key="SecondaryTextBrush" Color="#B5BCC7"/>
+					<SolidColorBrush x:Key="AccentSurfaceBrush" Color="#173A5E"/>
+					<SolidColorBrush x:Key="SuccessBrush" Color="#6CCB8E"/>
+					<SolidColorBrush x:Key="WarningBrush" Color="#F4BF62"/>
+					<SolidColorBrush x:Key="ErrorBrush" Color="#FF8A7A"/>
+				</ResourceDictionary>
+			</ResourceDictionary.ThemeDictionaries>
+
+			<x:Double x:Key="CompactSpacing">4</x:Double>
+			<x:Double x:Key="ControlSpacing">8</x:Double>
+			<x:Double x:Key="SectionSpacing">16</x:Double>
+			<x:Double x:Key="BodyFontSize">12</x:Double>
+			<x:Double x:Key="DataFontSize">12</x:Double>
+			<x:Double x:Key="CaptionFontSize">11</x:Double>
+			<x:Double x:Key="PanelTitleFontSize">12</x:Double>
+			<x:Double x:Key="SectionTitleFontSize">14</x:Double>
+			<x:Double x:Key="ScreenTitleFontSize">16</x:Double>
+			<x:Double x:Key="BodyLineHeight">15</x:Double>
+			<x:Double x:Key="DataLineHeight">15</x:Double>
+			<x:Double x:Key="ReadingLineHeight">16.8</x:Double>
+			<FontFamily x:Key="NumericFontFamily">Cascadia Mono, Consolas</FontFamily>
+			<Thickness x:Key="PanePadding">12</Thickness>
+			<Thickness x:Key="FormRowMargin">0,3</Thickness>
+		</ResourceDictionary>
+	</Styles.Resources>
+
+	<Style Selector="TemplatedControl">
+		<Setter Property="FontSize" Value="{StaticResource BodyFontSize}"/>
+	</Style>
+
+	<Style Selector="MenuItem, Button, TabItem, TreeViewItem, TextBox, ComboBox, NumericUpDown, CheckBox">
+		<Setter Property="FontSize" Value="{StaticResource BodyFontSize}"/>
+	</Style>
+
+	<Style Selector="TextBlock">
+		<Setter Property="FontSize" Value="{StaticResource BodyFontSize}"/>
+		<Setter Property="LineHeight" Value="{StaticResource BodyLineHeight}"/>
+	</Style>
+
+	<Style Selector="Window">
+		<Setter Property="Background" Value="{DynamicResource AppBackgroundBrush}"/>
+	</Style>
+
+	<Style Selector="TextBlock.form-label">
+		<Setter Property="VerticalAlignment" Value="Center"/>
+		<Setter Property="Margin" Value="0,3,8,3"/>
+		<Setter Property="TextWrapping" Value="Wrap"/>
+	</Style>
+
+	<Style Selector="TextBlock.form-unit">
+		<Setter Property="VerticalAlignment" Value="Center"/>
+		<Setter Property="Foreground" Value="{DynamicResource SecondaryTextBrush}"/>
+		<Setter Property="Margin" Value="8,3,0,3"/>
+		<Setter Property="MinWidth" Value="28"/>
+	</Style>
+
+	<Style Selector="Grid.form-grid">
+		<Setter Property="ColumnSpacing" Value="0"/>
+		<Setter Property="RowSpacing" Value="2"/>
+	</Style>
+
+	<Style Selector="Expander.inspector-section">
+		<Setter Property="Margin" Value="0,4,0,0"/>
+		<Setter Property="HorizontalAlignment" Value="Stretch"/>
+	</Style>
+
+	<Style Selector="Expander.inspector-section /template/ ToggleButton#PART_Header">
+		<Setter Property="FontSize" Value="{StaticResource PanelTitleFontSize}"/>
+		<Setter Property="FontWeight" Value="SemiBold"/>
+	</Style>
+
+	<Style Selector="Border.inherited-value">
+		<Setter Property="Background" Value="{DynamicResource PaneAlternateBrush}"/>
+		<Setter Property="CornerRadius" Value="4"/>
+		<Setter Property="Padding" Value="8"/>
+		<Setter Property="Margin" Value="0,6,0,0"/>
+	</Style>
+
+	<Style Selector="Border.pane">
+		<Setter Property="Background" Value="{DynamicResource PaneBackgroundBrush}"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource SubtleBorderBrush}"/>
+		<Setter Property="BorderThickness" Value="1"/>
+		<Setter Property="CornerRadius" Value="6"/>
+		<Setter Property="Padding" Value="{StaticResource PanePadding}"/>
+	</Style>
+
+	<Style Selector="Border.subtle-pane">
+		<Setter Property="Background" Value="{DynamicResource PaneAlternateBrush}"/>
+		<Setter Property="CornerRadius" Value="4"/>
+		<Setter Property="Padding" Value="8"/>
+	</Style>
+
+	<Style Selector="TextBlock.page-title">
+		<Setter Property="FontSize" Value="{StaticResource ScreenTitleFontSize}"/>
+		<Setter Property="FontWeight" Value="SemiBold"/>
+		<Setter Property="LineHeight" Value="19.2"/>
+	</Style>
+
+	<Style Selector="TextBlock.section-title">
+		<Setter Property="FontSize" Value="{StaticResource PanelTitleFontSize}"/>
+		<Setter Property="FontWeight" Value="SemiBold"/>
+		<Setter Property="LineHeight" Value="15"/>
+		<Setter Property="Margin" Value="0,0,0,6"/>
+	</Style>
+
+	<Style Selector="TextBlock.major-section-title">
+		<Setter Property="FontSize" Value="{StaticResource SectionTitleFontSize}"/>
+		<Setter Property="FontWeight" Value="Medium"/>
+		<Setter Property="LineHeight" Value="19.2"/>
+	</Style>
+
+	<Style Selector="Border.inspector-pane TextBlock.page-title">
+		<Setter Property="FontSize" Value="15"/>
+		<Setter Property="FontWeight" Value="SemiBold"/>
+		<Setter Property="LineHeight" Value="18"/>
+		<Setter Property="Margin" Value="0,2,0,0"/>
+	</Style>
+
+	<Style Selector="Border.inspector-pane TextBlock.section-title">
+		<Setter Property="FontSize" Value="{StaticResource BodyFontSize}"/>
+		<Setter Property="FontWeight" Value="Bold"/>
+		<Setter Property="LineHeight" Value="{StaticResource BodyLineHeight}"/>
+	</Style>
+
+	<Style Selector="TextBlock.secondary">
+		<Setter Property="Foreground" Value="{DynamicResource SecondaryTextBrush}"/>
+	</Style>
+
+	<Style Selector="TextBlock.help-text">
+		<Setter Property="Foreground" Value="{DynamicResource SecondaryTextBrush}"/>
+		<Setter Property="FontSize" Value="{StaticResource DataFontSize}"/>
+		<Setter Property="LineHeight" Value="{StaticResource ReadingLineHeight}"/>
+		<Setter Property="TextWrapping" Value="Wrap"/>
+	</Style>
+
+	<Style Selector="TextBlock.validation-error">
+		<Setter Property="Foreground" Value="{DynamicResource ErrorBrush}"/>
+		<Setter Property="FontSize" Value="{StaticResource DataFontSize}"/>
+		<Setter Property="LineHeight" Value="{StaticResource ReadingLineHeight}"/>
+		<Setter Property="TextWrapping" Value="Wrap"/>
+	</Style>
+
+	<Style Selector="ToolTip">
+		<Setter Property="FontSize" Value="{StaticResource CaptionFontSize}"/>
+	</Style>
+
+	<Style Selector="Button.command">
+		<Setter Property="MinHeight" Value="32"/>
+		<Setter Property="Padding" Value="12,5"/>
+	</Style>
+
+	<Style Selector="Button.primary-command">
+		<Setter Property="MinHeight" Value="32"/>
+		<Setter Property="Padding" Value="14,5"/>
+	</Style>
+
+	<Style Selector="NumericUpDown">
+		<Setter Property="ShowButtonSpinner" Value="False"/>
+		<Setter Property="AllowSpin" Value="False"/>
+		<Setter Property="HorizontalAlignment" Value="Stretch"/>
+		<Setter Property="MinWidth" Value="96"/>
+		<Setter Property="FontFamily" Value="{StaticResource NumericFontFamily}"/>
+	</Style>
+
+	<Style Selector="TextBlock.numeric-data">
+		<Setter Property="FontFamily" Value="{StaticResource NumericFontFamily}"/>
+	</Style>
+
+	<Style Selector="DataGrid.engineering-data">
+		<Setter Property="FontFamily" Value="{StaticResource NumericFontFamily}"/>
+		<Setter Property="FontSize" Value="{StaticResource DataFontSize}"/>
+	</Style>
+
+	<Style Selector="DataGrid.engineering-data TextBlock">
+		<Setter Property="FontFamily" Value="{StaticResource NumericFontFamily}"/>
+		<Setter Property="FontSize" Value="{StaticResource DataFontSize}"/>
+		<Setter Property="LineHeight" Value="{StaticResource DataLineHeight}"/>
+	</Style>
+
+	<Style Selector="TextBox.form-control, ComboBox.form-control, NumericUpDown.form-control">
+		<Setter Property="HorizontalAlignment" Value="Stretch"/>
+		<Setter Property="MinWidth" Value="110"/>
+	</Style>
+
+	<Style Selector="GridSplitter.workspace-splitter">
+		<Setter Property="Background" Value="Transparent"/>
+	</Style>
+
+	<Style Selector="Border.status-region">
+		<Setter Property="Background" Value="{DynamicResource PaneBackgroundBrush}"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource SubtleBorderBrush}"/>
+		<Setter Property="BorderThickness" Value="0,1,0,0"/>
+		<Setter Property="Padding" Value="12,6"/>
+	</Style>
+
+	<Style Selector="Border.status-region TextBlock">
+		<Setter Property="FontSize" Value="{StaticResource CaptionFontSize}"/>
+		<Setter Property="LineHeight" Value="13.2"/>
+	</Style>
+</Styles>

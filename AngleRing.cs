@@ -16,7 +16,8 @@ namespace electrostat
         double Th,        // horizontal leg thickness (axial)
         double Wh,        // horizontal leg width (radial, signed)
         double InsideFilletR = 0.0,
-        Taper? TaperVTip = null
+        Taper? TaperVTip = null,
+        double RelativePermittivity = DielectricDefaults.SolidInsulationRelativePermittivity
     );
 
 }

@@ -21,9 +21,10 @@ namespace electrostat_UI.Views.Dialogs
         }
 
         /// <summary>Show the dialog modally over <paramref name="owner"/> and await the result.</summary>
-        public static Task<SaveChangesResult> ShowAsync(Window owner)
+        public static Task<SaveChangesResult> ShowAsync(Window owner, string documentName)
         {
             var dialog = new SaveChangesDialog();
+            dialog.MessageText.Text = $"Do you want to save changes to “{documentName}”?";
             return dialog.ShowDialog<SaveChangesResult>(owner);
         }
 

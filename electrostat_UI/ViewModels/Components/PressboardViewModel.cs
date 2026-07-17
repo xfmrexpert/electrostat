@@ -10,6 +10,16 @@ namespace electrostat_UI.ViewModels.Components
         [ObservableProperty] private double _zBottom;
         [ObservableProperty] private double _thickness;
         [ObservableProperty] private double _height;
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(HasPermittivityError))]
+        [NotifyPropertyChangedFor(nameof(PermittivityValidationMessage))]
+        private double _relativePermittivity;
+
+        public bool HasPermittivityError => RelativePermittivity <= 0;
+
+        public string PermittivityValidationMessage => HasPermittivityError
+            ? "Relative permittivity must be greater than zero."
+            : string.Empty;
 
         /// <summary>Editable taper on the top (high-z) end; disabled means a square end.</summary>
         public TaperViewModel TaperTop { get; }
@@ -20,6 +30,7 @@ namespace electrostat_UI.ViewModels.Components
         public PressboardViewModel() : this(default(PressboardBarrier))
         {
             Name = "Pressboard";
+            RelativePermittivity = DielectricDefaults.SolidInsulationRelativePermittivity;
         }
 
         public PressboardViewModel(PressboardBarrier pb)
@@ -29,6 +40,7 @@ namespace electrostat_UI.ViewModels.Components
             _zBottom = pb.ZBottom;
             _thickness = pb.Thickness;
             _height = pb.Height;
+            _relativePermittivity = pb.RelativePermittivity;
             TaperTop = new TaperViewModel(pb.TaperTop);
             TaperBottom = new TaperViewModel(pb.TaperBottom);
 
@@ -43,6 +55,7 @@ namespace electrostat_UI.ViewModels.Components
             OnPropertyChanged(ReferenceEquals(sender, TaperTop) ? nameof(TaperTop) : nameof(TaperBottom));
 
         public PressboardBarrier ToModel() =>
-            new(Name, R0, ZBottom, Thickness, Height, TaperTop.ToModel(), TaperBottom.ToModel());
+            new(Name, R0, ZBottom, Thickness, Height, TaperTop.ToModel(), TaperBottom.ToModel(),
+                RelativePermittivity);
     }
 }

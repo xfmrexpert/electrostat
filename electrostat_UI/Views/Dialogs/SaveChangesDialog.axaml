@@ -10,12 +10,15 @@
 		CanResize="False"
 		ShowInTaskbar="False">
 	<StackPanel Margin="16" Spacing="16">
-		<TextBlock Text="Do you want to save changes to the current case?"
+		<TextBlock x:Name="MessageText" Text="Do you want to save changes to the current case?"
 				   TextWrapping="Wrap"/>
 		<StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
-			<Button x:Name="SaveButton" Content="_Save" MinWidth="90" IsDefault="True"/>
-			<Button x:Name="DiscardButton" Content="Do_n't Save" MinWidth="90"/>
-			<Button x:Name="CancelButton" Content="_Cancel" MinWidth="90" IsCancel="True"/>
+			<Button x:Name="SaveButton" Content="_Save" MinWidth="90" IsDefault="True"
+					AutomationProperties.Name="Save changes"/>
+			<Button x:Name="DiscardButton" Content="Do_n't Save" MinWidth="90"
+					AutomationProperties.Name="Discard changes"/>
+			<Button x:Name="CancelButton" Content="_Cancel" MinWidth="90" IsCancel="True"
+					AutomationProperties.Name="Cancel and continue editing"/>
 		</StackPanel>
 	</StackPanel>
 </Window>

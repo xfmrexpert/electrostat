@@ -24,6 +24,7 @@ namespace electrostat
         double RBR = 0.0,
         double RBL = 0.0,
         double TPaper = 2.0,
-        string? ParentWinding = null
+        string? ParentWinding = null,
+        double PaperRelativePermittivity = DielectricDefaults.SolidInsulationRelativePermittivity
     );
 }

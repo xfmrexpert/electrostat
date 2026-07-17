@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Interactivity;
 using electrostat_UI.ViewModels;
 
 namespace electrostat_UI.Views
@@ -13,6 +14,12 @@ namespace electrostat_UI.Views
         {
             InitializeComponent();
         }
+
+        private void FitGeometry(object? sender, RoutedEventArgs e) => GeometryCanvas.ResetView();
+
+        private void ZoomGeometryIn(object? sender, RoutedEventArgs e) => GeometryCanvas.ZoomIn();
+
+        private void ZoomGeometryOut(object? sender, RoutedEventArgs e) => GeometryCanvas.ZoomOut();
 
         protected override async void OnClosing(WindowClosingEventArgs e)
         {

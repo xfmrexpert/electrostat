@@ -13,6 +13,16 @@ namespace electrostat_UI.ViewModels.Components
         [ObservableProperty] private double _th;
         [ObservableProperty] private double _wh;
         [ObservableProperty] private double _insideFilletR;
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(HasPermittivityError))]
+        [NotifyPropertyChangedFor(nameof(PermittivityValidationMessage))]
+        private double _relativePermittivity;
+
+        public bool HasPermittivityError => RelativePermittivity <= 0;
+
+        public string PermittivityValidationMessage => HasPermittivityError
+            ? "Relative permittivity must be greater than zero."
+            : string.Empty;
 
         /// <summary>Editable taper on the vertical-leg tip; disabled means a square end.</summary>
         public TaperViewModel TaperVTip { get; }
@@ -20,6 +30,7 @@ namespace electrostat_UI.ViewModels.Components
         public AngleRingViewModel() : this(default(AngleRing))
         {
             Name = "AngleRing";
+            RelativePermittivity = DielectricDefaults.SolidInsulationRelativePermittivity;
         }
 
         public AngleRingViewModel(AngleRing ar)
@@ -32,6 +43,7 @@ namespace electrostat_UI.ViewModels.Components
             _th = ar.Th;
             _wh = ar.Wh;
             _insideFilletR = ar.InsideFilletR;
+            _relativePermittivity = ar.RelativePermittivity;
             TaperVTip = new TaperViewModel(ar.TaperVTip);
 
             // Surface nested taper edits as a change on this component so the owning
@@ -44,6 +56,7 @@ namespace electrostat_UI.ViewModels.Components
             OnPropertyChanged(nameof(TaperVTip));
 
         public AngleRing ToModel() =>
-            new(Name, R0, ZCorner, Tv, Hv, Th, Wh, InsideFilletR, TaperVTip.ToModel());
+            new(Name, R0, ZCorner, Tv, Hv, Th, Wh, InsideFilletR, TaperVTip.ToModel(),
+                RelativePermittivity);
     }
 }

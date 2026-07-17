@@ -27,6 +27,26 @@ namespace electrostat_UI.ViewModels
         /// <summary>Core window width (mm) between adjacent legs.</summary>
         [ObservableProperty] private double _windowWidth;
 
+        /// <summary>Relative permittivity of the transformer oil shared by every cut.</summary>
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(HasPermittivityError))]
+        [NotifyPropertyChangedFor(nameof(PermittivityValidationMessage))]
+        private double _oilRelativePermittivity;
+
+        public bool HasPermittivityError => OilRelativePermittivity <= 0;
+
+        public string PermittivityValidationMessage => HasPermittivityError
+            ? "Oil relative permittivity must be greater than zero."
+            : string.Empty;
+
+        public bool HasValidPermittivities =>
+            !HasPermittivityError &&
+            Pressboards.All(component => !component.HasPermittivityError) &&
+            AngleRings.All(component => !component.HasPermittivityError) &&
+            StaticRings.All(component => !component.HasPermittivityError) &&
+            InterphaseBarriers.All(component => !component.HasPermittivityError) &&
+            InterphaseAngleRings.All(component => !component.HasPermittivityError);
+
         public ObservableCollection<WindingViewModel> Windings { get; } = new();
         public ObservableCollection<PressboardViewModel> Pressboards { get; } = new();
         public ObservableCollection<AngleRingViewModel> AngleRings { get; } = new();
@@ -71,6 +91,7 @@ namespace electrostat_UI.ViewModels
             _name = model.Name;
             _coreLegRadius = model.CoreLegRadius;
             _windowWidth = model.WindowWidth;
+            _oilRelativePermittivity = model.OilRelativePermittivity;
             Voltages = new Dictionary<string, double>(model.Voltages);
 
             foreach (var w in model.Windings)
@@ -343,7 +364,8 @@ namespace electrostat_UI.ViewModels
                 InterphaseAngleRings.Select(a => a.ToModel()).ToList(),
                 BuildVoltages(),
                 scenarios,
-                Cuts.Select(c => c.ToModel()).ToList());
+                Cuts.Select(c => c.ToModel()).ToList(),
+                OilRelativePermittivity);
         }
 
         /// <summary>

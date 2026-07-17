@@ -37,7 +37,8 @@ namespace electrostat
         IReadOnlyList<StaticRing> StaticRings,
         Dictionary<string, double> Voltages,
         IReadOnlyList<VoltageScenario>? Scenarios = null,
-        GeometryType GeometryType = GeometryType.Axisymmetric)
+        GeometryType GeometryType = GeometryType.Axisymmetric,
+        double OilRelativePermittivity = DielectricDefaults.OilRelativePermittivity)
     {
         /// <summary>
         /// Resolve the full electrode voltage map for a given <paramref name="scenario"/>.

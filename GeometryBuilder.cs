@@ -493,19 +493,19 @@ namespace electrostat
             return map;
         }
 
-        /// <summary>Create the three dielectric materials (oil, paper, pressboard) and register them on the problem.</summary>
+        /// <summary>Create the three dielectric materials and register them on the problem.</summary>
         private static void AddMaterials(BuildContext ctx)
         {
             var problem = ctx.Problem;
 
             var oil = new Material("Oil");
-            oil.Properties.Add("epsilon_r", 2.2);
+            oil.Properties.Add("epsilon_r", ctx.Case.OilRelativePermittivity);
             problem.Materials.Add(oil);
             var paper = new Material("Paper");
-            paper.Properties.Add("epsilon_r", 4.4);
+            paper.Properties.Add("epsilon_r", DielectricDefaults.SolidInsulationRelativePermittivity);
             problem.Materials.Add(paper);
             var pressboard = new Material("Pressboard");
-            pressboard.Properties.Add("epsilon_r", 4.4);
+            pressboard.Properties.Add("epsilon_r", DielectricDefaults.SolidInsulationRelativePermittivity);
             problem.Materials.Add(pressboard);
 
             ctx.Oil = oil;
@@ -627,6 +627,7 @@ namespace electrostat
                 var pb_group = new EntityGroup { Name = pb.Name, Dimension = 2, AttributeIds = new List<int> { pb_tag } };
                 problem.EntityGroups.Add(pb_group);
                 var pb_region = new Region(pb.Name, pb_group.Name, pressboard);
+                pb_region.Properties.Add("epsilon_r", pb.RelativePermittivity);
                 problem.Regions.Add(pb_region);
                 ctx.RegisterComponentSurface(pb.Name, pb_surf);
             }
@@ -639,6 +640,7 @@ namespace electrostat
                 var ar_group = new EntityGroup { Name = ar.Name, Dimension = 2, AttributeIds = new List<int> { ar_tag } };
                 problem.EntityGroups.Add(ar_group);
                 var ar_region = new Region(ar.Name, ar_group.Name, pressboard);
+                ar_region.Properties.Add("epsilon_r", ar.RelativePermittivity);
                 problem.Regions.Add(ar_region);
                 ctx.RegisterComponentSurface(ar.Name, ar_surf);
             }
@@ -658,6 +660,7 @@ namespace electrostat
                 var paper_group = new EntityGroup { Name = sr.Name + "_Paper", Dimension = 2, AttributeIds = new List<int> { paper_tag } };
                 problem.EntityGroups.Add(paper_group);
                 var paper_region = new Region(sr.Name+"_Paper", paper_group.Name, paper);
+                paper_region.Properties.Add("epsilon_r", sr.PaperRelativePermittivity);
                 problem.Regions.Add(paper_region);
                 ctx.RegisterComponentSurface(sr.Name, paper_surf);
                 ctx.RegisterComponentSurface(sr.Name, metal_surf);

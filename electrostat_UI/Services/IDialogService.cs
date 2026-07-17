@@ -32,6 +32,6 @@ namespace electrostat_UI.Services
         Task<string?> SaveFileAsync(string? suggestedFileName);
 
         /// <summary>Ask the user whether to save, discard, or cancel when changes are pending.</summary>
-        Task<SaveChangesResult> ConfirmSaveChangesAsync();
+        Task<SaveChangesResult> ConfirmSaveChangesAsync(string documentName);
     }
 }

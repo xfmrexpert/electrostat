@@ -45,13 +45,28 @@ namespace electrostat_UI.ViewModels
         private CaseTreeNode? _selectedTreeNode;
 
         [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(HasSelectedComponent))]
+        [NotifyPropertyChangedFor(nameof(HasNoSelectedComponent))]
         private object? _selectedComponent;
+
+        public bool HasSelectedComponent => SelectedComponent != null;
+
+        public bool HasNoSelectedComponent => SelectedComponent == null;
 
         [ObservableProperty]
         private IReadOnlyList<GeomSurface>? _highlightedSurfaces;
 
         [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(HasCurrentGeometry))]
+        [NotifyPropertyChangedFor(nameof(HasNoCurrentGeometry))]
         private Geometry? _currentGeometry;
+
+        public bool HasCurrentGeometry => CurrentGeometry?.Surfaces.Count > 0;
+
+        public bool HasNoCurrentGeometry => !HasCurrentGeometry;
+
+        [ObservableProperty]
+        private bool _isGeometryLegendVisible = true;
 
         /// <summary>
         /// Per-surface semantic classification for the active geometry, letting the geometry
@@ -62,9 +77,24 @@ namespace electrostat_UI.ViewModels
         private IReadOnlyDictionary<GeomSurface, SurfaceCategory>? _surfaceCategories;
 
         [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(StatusIndicator))]
         private string _statusMessage = "Select an example to render its geometry.";
 
+        public string StatusIndicator
+        {
+            get
+            {
+                if (IsSolving)
+                    return "Working";
+                if (StatusMessage.Contains("failed", StringComparison.OrdinalIgnoreCase) ||
+                    StatusMessage.Contains("no results", StringComparison.OrdinalIgnoreCase))
+                    return "Attention";
+                return "Status";
+            }
+        }
+
         [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(StatusIndicator))]
         private bool _isSolving;
 
         /// <summary>
@@ -82,13 +112,24 @@ namespace electrostat_UI.ViewModels
         /// ("Untitled") document. Drives the window title and Save vs. Save As behavior.
         /// </summary>
         [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(DocumentDisplayName))]
+        [NotifyPropertyChangedFor(nameof(DocumentStateText))]
         [NotifyPropertyChangedFor(nameof(WindowTitle))]
         private string? _currentFilePath;
 
         /// <summary>True when the current case has unsaved edits.</summary>
         [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(DocumentStateText))]
         [NotifyPropertyChangedFor(nameof(WindowTitle))]
         private bool _isModified;
+
+        public string DocumentDisplayName => CurrentFilePath != null
+            ? Path.GetFileNameWithoutExtension(CurrentFilePath)
+            : "Untitled";
+
+        public string DocumentStateText => IsModified
+            ? $"{DocumentDisplayName} — Unsaved changes"
+            : DocumentDisplayName;
 
         /// <summary>Document-style window title: "{file or Untitled}{* if modified} — electrostat".</summary>
         public string WindowTitle
@@ -108,7 +149,28 @@ namespace electrostat_UI.ViewModels
         /// Results after a successful solve so the freshly published results are shown.
         /// </summary>
         [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(IsDesignWorkspace))]
+        [NotifyPropertyChangedFor(nameof(IsResultsWorkspace))]
         private int _activeTabIndex;
+
+        public bool IsDesignWorkspace => ActiveTabIndex == DesignTabIndex;
+
+        public bool IsResultsWorkspace => ActiveTabIndex == ResultsTabIndex;
+
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(IsExplorerHidden))]
+        private bool _isExplorerVisible = true;
+
+        public bool IsExplorerHidden => !IsExplorerVisible;
+
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(IsInspectorHidden))]
+        private bool _isInspectorVisible = true;
+
+        public bool IsInspectorHidden => !IsInspectorVisible;
+
+        [ObservableProperty]
+        private string _solveOperationText = string.Empty;
 
         private const int DesignTabIndex = 0;
         private const int ResultsTabIndex = 1;
@@ -199,6 +261,13 @@ namespace electrostat_UI.ViewModels
             // Default the active cut to the transformer's first cut so the preview / solve
             // commands have a target as soon as a transformer is selected.
             SelectedCut = EditingTransformer?.Cuts.FirstOrDefault();
+            AddWindingCommand.NotifyCanExecuteChanged();
+            AddPressboardCommand.NotifyCanExecuteChanged();
+            AddAngleRingCommand.NotifyCanExecuteChanged();
+            AddStaticRingCommand.NotifyCanExecuteChanged();
+            AddScenarioCommand.NotifyCanExecuteChanged();
+            AddCutCommand.NotifyCanExecuteChanged();
+            RemoveSelectedCommand.NotifyCanExecuteChanged();
             SolveCutCommand.NotifyCanExecuteChanged();
             SolveAllCutsCommand.NotifyCanExecuteChanged();
 
@@ -221,6 +290,8 @@ namespace electrostat_UI.ViewModels
             // so its expansion / selection survive editing — it is rebuilt only when the
             // structure actually changes (see OnCaseStructureChanged).
             if (!_suppressDirty) IsModified = true;
+            SolveCutCommand.NotifyCanExecuteChanged();
+            SolveAllCutsCommand.NotifyCanExecuteChanged();
             _rebuildTimer.Stop();
             _rebuildTimer.Start();
         }
@@ -241,6 +312,7 @@ namespace electrostat_UI.ViewModels
                 return;
 
             SelectedComponent = value?.Model;
+            RemoveSelectedCommand.NotifyCanExecuteChanged();
 
             // Selecting a cut makes that cut the active one for preview / single-cut solve.
             // Its domain bounds are edited inline in the cut editor, so no separate node exists.
@@ -377,7 +449,7 @@ namespace electrostat_UI.ViewModels
             if (!IsModified || _dialogService == null)
                 return true;
 
-            var result = await _dialogService.ConfirmSaveChangesAsync();
+            var result = await _dialogService.ConfirmSaveChangesAsync(DocumentDisplayName);
             return result switch
             {
                 SaveChangesResult.Save => await SaveCoreAsync(saveAs: false),
@@ -468,9 +540,23 @@ namespace electrostat_UI.ViewModels
         [RelayCommand]
         private void Exit() => RequestClose?.Invoke();
 
-        // ---- Add / Remove component commands ----
+        [RelayCommand]
+        private void ShowDesignWorkspace() => ActiveTabIndex = DesignTabIndex;
 
         [RelayCommand]
+        private void ShowResultsWorkspace() => ActiveTabIndex = ResultsTabIndex;
+
+        [RelayCommand]
+        private void ToggleExplorer() => IsExplorerVisible = !IsExplorerVisible;
+
+        [RelayCommand]
+        private void ToggleInspector() => IsInspectorVisible = !IsInspectorVisible;
+
+        // ---- Add / Remove component commands ----
+
+        private bool CanEditCase() => EditingTransformer != null && !IsSolving;
+
+        [RelayCommand(CanExecute = nameof(CanEditCase))]
         private void AddWinding()
         {
             if (EditingTransformer == null) return;
@@ -481,7 +567,7 @@ namespace electrostat_UI.ViewModels
             });
         }
 
-        [RelayCommand]
+        [RelayCommand(CanExecute = nameof(CanEditCase))]
         private void AddPressboard()
         {
             if (EditingTransformer == null) return;
@@ -492,7 +578,7 @@ namespace electrostat_UI.ViewModels
             });
         }
 
-        [RelayCommand]
+        [RelayCommand(CanExecute = nameof(CanEditCase))]
         private void AddAngleRing()
         {
             if (EditingTransformer == null) return;
@@ -503,7 +589,7 @@ namespace electrostat_UI.ViewModels
             });
         }
 
-        [RelayCommand]
+        [RelayCommand(CanExecute = nameof(CanEditCase))]
         private void AddStaticRing()
         {
             if (EditingTransformer == null) return;
@@ -514,7 +600,7 @@ namespace electrostat_UI.ViewModels
             });
         }
 
-        [RelayCommand]
+        [RelayCommand(CanExecute = nameof(CanEditCase))]
         private void AddScenario()
         {
             if (EditingTransformer == null) return;
@@ -527,7 +613,7 @@ namespace electrostat_UI.ViewModels
             EditingTransformer.Scenarios.Add(sc);
         }
 
-        [RelayCommand]
+        [RelayCommand(CanExecute = nameof(CanEditCase))]
         private void AddCut()
         {
             if (EditingTransformer == null) return;
@@ -548,10 +634,15 @@ namespace electrostat_UI.ViewModels
             SelectedCut = cut;
         }
 
-        [RelayCommand]
+        private bool CanRemoveSelected() => !IsSolving && SelectedComponent is
+            WindingViewModel or PressboardViewModel or AngleRingViewModel or
+            StaticRingViewModel or VoltageScenarioViewModel or CutViewModel;
+
+        [RelayCommand(CanExecute = nameof(CanRemoveSelected))]
         private void RemoveSelected()
         {
             if (EditingTransformer == null) return;
+            string removedName = SelectedTreeNode?.Name ?? "selected item";
             switch (SelectedComponent)
             {
                 case WindingViewModel w: EditingTransformer.Windings.Remove(w); break;
@@ -565,6 +656,8 @@ namespace electrostat_UI.ViewModels
                         SelectedCut = EditingTransformer.Cuts.FirstOrDefault();
                     break;
             }
+            SelectedTreeNode = null;
+            StatusMessage = $"Removed {removedName}. Save the case to keep this change.";
         }
 
         private static string UniqueName(string baseName, IEnumerable<string> existing)
@@ -722,10 +815,14 @@ namespace electrostat_UI.ViewModels
         }
 
         private bool CanSolveCut() =>
-            EditingTransformer != null && SelectedCut != null && !IsSolving;
+            EditingTransformer != null && SelectedCut != null &&
+            EditingTransformer.HasValidPermittivities &&
+            !SelectedCut.Domain.HasValidationError && !IsSolving;
 
         private bool CanSolveAllCuts() =>
-            EditingTransformer != null && EditingTransformer.Cuts.Count > 0 && !IsSolving;
+            EditingTransformer != null && EditingTransformer.Cuts.Count > 0 &&
+            EditingTransformer.HasValidPermittivities &&
+            EditingTransformer.Cuts.All(cut => !cut.Domain.HasValidationError) && !IsSolving;
 
         /// <summary>
         /// Solve the currently selected cut on its own, replacing the results view with that
@@ -739,6 +836,7 @@ namespace electrostat_UI.ViewModels
             if (tx == null || cut == null) return;
 
             IsSolving = true;
+            SolveOperationText = $"Preparing {cut.Name}";
             SolveCutCommand.NotifyCanExecuteChanged();
             SolveAllCutsCommand.NotifyCanExecuteChanged();
             try
@@ -756,6 +854,7 @@ namespace electrostat_UI.ViewModels
             finally
             {
                 IsSolving = false;
+                SolveOperationText = string.Empty;
                 SolveCutCommand.NotifyCanExecuteChanged();
                 SolveAllCutsCommand.NotifyCanExecuteChanged();
             }
@@ -772,6 +871,7 @@ namespace electrostat_UI.ViewModels
             if (tx == null || tx.Cuts.Count == 0) return;
 
             IsSolving = true;
+            SolveOperationText = $"Preparing {tx.Name}";
             SolveCutCommand.NotifyCanExecuteChanged();
             SolveAllCutsCommand.NotifyCanExecuteChanged();
             try
@@ -781,6 +881,7 @@ namespace electrostat_UI.ViewModels
                 for (int i = 0; i < cuts.Count; i++)
                 {
                     var cut = cuts[i];
+                    SolveOperationText = $"Cut {i + 1} of {cuts.Count}: {cut.Name}";
                     StatusMessage = $"Solving cut {i + 1}/{cuts.Count}: {cut.Name}...";
                     var scenarios = await SolveCaseAsync(tx.ResolveCut(cut), cut.Name);
                     cutResults.Add(CutResult.FromScenarios(cut.Name, scenarios));
@@ -796,6 +897,7 @@ namespace electrostat_UI.ViewModels
             finally
             {
                 IsSolving = false;
+                SolveOperationText = string.Empty;
                 SolveCutCommand.NotifyCanExecuteChanged();
                 SolveAllCutsCommand.NotifyCanExecuteChanged();
             }
@@ -830,6 +932,7 @@ namespace electrostat_UI.ViewModels
             // against this one mesh. Seed the base effective voltages so a Dirichlet BC /
             // terminal is created for every electrode and wall.
             StatusMessage = $"Building mesh for {label}...";
+            SolveOperationText = $"Building mesh: {label}";
 
             // Capture the AMR choice on the UI thread before handing off to the worker.
             // When enabled, the solver refines around divergent fields and returns the
@@ -852,6 +955,9 @@ namespace electrostat_UI.ViewModels
             StatusMessage = hasScenarios
                 ? $"Solving {label}: {total} scenario(s)..."
                 : $"Solving {label}...";
+            SolveOperationText = hasScenarios
+                ? $"Solving {label} — {total} scenarios"
+                : $"Solving {label}";
             await Task.Run(() => builtModel.Solve());
 
             var results = new List<ScenarioResult>(builtModel.ScenarioSolutions.Count);
@@ -965,6 +1071,13 @@ namespace electrostat_UI.ViewModels
 
         partial void OnIsSolvingChanged(bool value)
         {
+            AddWindingCommand.NotifyCanExecuteChanged();
+            AddPressboardCommand.NotifyCanExecuteChanged();
+            AddAngleRingCommand.NotifyCanExecuteChanged();
+            AddStaticRingCommand.NotifyCanExecuteChanged();
+            AddScenarioCommand.NotifyCanExecuteChanged();
+            AddCutCommand.NotifyCanExecuteChanged();
+            RemoveSelectedCommand.NotifyCanExecuteChanged();
             SolveCutCommand.NotifyCanExecuteChanged();
             SolveAllCutsCommand.NotifyCanExecuteChanged();
         }

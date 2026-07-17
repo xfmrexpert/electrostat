@@ -50,6 +50,18 @@ namespace electrostat_UI.Views
             set => SetValue(SurfaceCategoriesProperty, value);
         }
 
+        public static readonly DirectProperty<GeometryView, string> PointerCoordinateTextProperty =
+            AvaloniaProperty.RegisterDirect<GeometryView, string>(
+                nameof(PointerCoordinateText), view => view.PointerCoordinateText);
+
+        private string _pointerCoordinateText = string.Empty;
+
+        public string PointerCoordinateText
+        {
+            get => _pointerCoordinateText;
+            private set => SetAndRaise(PointerCoordinateTextProperty, ref _pointerCoordinateText, value);
+        }
+
         // User-applied transform (relative to the auto-fit baseline).
         // World-to-screen is: screen = (autoFit(world) - _panOrigin) * _zoom + _panOrigin + _panOffset
         // Implemented in Render via a translate-scale-translate composition.
@@ -81,10 +93,26 @@ namespace electrostat_UI.Views
             }
         }
 
-        private void ResetView()
+        public void ResetView()
         {
             _zoom = 1.0;
             _pan = new Vector(0, 0);
+            InvalidateVisual();
+        }
+
+        public void ZoomIn() => SetZoom(_zoom * 1.25);
+
+        public void ZoomOut() => SetZoom(_zoom / 1.25);
+
+        private void SetZoom(double zoom)
+        {
+            var center = new Point(Bounds.Width / 2.0, Bounds.Height / 2.0);
+            double newZoom = Math.Clamp(zoom, 0.05, 200.0);
+            double k = newZoom / _zoom;
+            _pan = new Vector(
+                center.X - (center.X - _pan.X) * k,
+                center.Y - (center.Y - _pan.Y) * k);
+            _zoom = newZoom;
             InvalidateVisual();
         }
 
@@ -109,6 +137,42 @@ namespace electrostat_UI.Views
                 pos.Y - (pos.Y - _pan.Y) * k);
             _zoom = newZoom;
 
+            InvalidateVisual();
+            e.Handled = true;
+        }
+
+        protected override void OnKeyDown(KeyEventArgs e)
+        {
+            base.OnKeyDown(e);
+            const double panStep = 24;
+            switch (e.Key)
+            {
+                case Key.Add:
+                case Key.OemPlus:
+                    ZoomIn();
+                    break;
+                case Key.Subtract:
+                case Key.OemMinus:
+                    ZoomOut();
+                    break;
+                case Key.Home:
+                    ResetView();
+                    break;
+                case Key.Left:
+                    _pan += new Vector(panStep, 0);
+                    break;
+                case Key.Right:
+                    _pan += new Vector(-panStep, 0);
+                    break;
+                case Key.Up:
+                    _pan += new Vector(0, panStep);
+                    break;
+                case Key.Down:
+                    _pan += new Vector(0, -panStep);
+                    break;
+                default:
+                    return;
+            }
             InvalidateVisual();
             e.Handled = true;
         }
@@ -138,14 +202,23 @@ namespace electrostat_UI.Views
         protected override void OnPointerMoved(PointerEventArgs e)
         {
             base.OnPointerMoved(e);
+            var pos = e.GetPosition(this);
+            PointerCoordinateText = TryScreenToWorld(pos, out double r, out double z)
+                ? $"r {r:N2} mm   z {z:N2} mm"
+                : string.Empty;
             if (!_isPanning) return;
 
-            var pos = e.GetPosition(this);
             var delta = pos - _lastPointerPos;
             _lastPointerPos = pos;
 
             _pan += delta;
             InvalidateVisual();
+        }
+
+        protected override void OnPointerExited(PointerEventArgs e)
+        {
+            base.OnPointerExited(e);
+            PointerCoordinateText = string.Empty;
         }
 
         protected override void OnPointerReleased(PointerReleasedEventArgs e)
@@ -245,6 +318,43 @@ namespace electrostat_UI.Views
         }
 
         private static bool IsFinite(double v) => !double.IsNaN(v) && !double.IsInfinity(v);
+
+        private bool TryScreenToWorld(Point screen, out double r, out double z)
+        {
+            r = 0;
+            z = 0;
+            var geom = Geometry;
+            if (geom == null || geom.Surfaces.Count == 0 || Bounds.Width <= 24 || Bounds.Height <= 24)
+                return false;
+
+            double minX = double.PositiveInfinity, minY = double.PositiveInfinity;
+            double maxX = double.NegativeInfinity, maxY = double.NegativeInfinity;
+            foreach (var surface in geom.Surfaces)
+            {
+                var bounds = surface.Boundary.GetBoundingBox();
+                minX = Math.Min(minX, bounds.minX);
+                minY = Math.Min(minY, bounds.minY);
+                maxX = Math.Max(maxX, bounds.maxX);
+                maxY = Math.Max(maxY, bounds.MaxY);
+            }
+            if (!IsFinite(minX) || !IsFinite(minY) || !IsFinite(maxX) || !IsFinite(maxY))
+                return false;
+
+            const double margin = 12.0;
+            double width = Bounds.Width - 2 * margin;
+            double height = Bounds.Height - 2 * margin;
+            double dx = Math.Max(maxX - minX, 1e-9);
+            double dy = Math.Max(maxY - minY, 1e-9);
+            double scale = Math.Min(width / dx, height / dy);
+            double offsetX = margin + (width - dx * scale) / 2.0;
+            double offsetY = margin + (height - dy * scale) / 2.0;
+
+            double fittedX = (screen.X - _pan.X) / _zoom;
+            double fittedY = (screen.Y - _pan.Y) / _zoom;
+            r = minX + (fittedX - offsetX) / scale;
+            z = minY + ((Bounds.Height - fittedY) - offsetY) / scale;
+            return true;
+        }
 
         // Semi-transparent fills keyed by what each region physically represents, so
         // components read by material/type at a glance rather than by a rotating palette.

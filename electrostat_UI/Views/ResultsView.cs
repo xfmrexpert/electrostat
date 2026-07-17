@@ -162,10 +162,26 @@ namespace electrostat_UI.Views
             _hasWorldBounds = false;
         }
 
-        private void ResetView()
+        public void ResetView()
         {
             _zoom = 1.0;
             _pan = new Vector(0, 0);
+            InvalidateVisual();
+        }
+
+        public void ZoomIn() => SetZoom(_zoom * 1.25);
+
+        public void ZoomOut() => SetZoom(_zoom / 1.25);
+
+        private void SetZoom(double zoom)
+        {
+            var center = new Point(Bounds.Width / 2.0, Bounds.Height / 2.0);
+            double newZoom = Math.Clamp(zoom, 0.05, 500.0);
+            double k = newZoom / _zoom;
+            _pan = new Vector(
+                center.X - (center.X - _pan.X) * k,
+                center.Y - (center.Y - _pan.Y) * k);
+            _zoom = newZoom;
             InvalidateVisual();
         }
 
@@ -183,6 +199,42 @@ namespace electrostat_UI.Views
                 pos.Y - (pos.Y - _pan.Y) * k);
             _zoom = newZoom;
 
+            InvalidateVisual();
+            e.Handled = true;
+        }
+
+        protected override void OnKeyDown(KeyEventArgs e)
+        {
+            base.OnKeyDown(e);
+            const double panStep = 24;
+            switch (e.Key)
+            {
+                case Key.Add:
+                case Key.OemPlus:
+                    ZoomIn();
+                    break;
+                case Key.Subtract:
+                case Key.OemMinus:
+                    ZoomOut();
+                    break;
+                case Key.Home:
+                    ResetView();
+                    break;
+                case Key.Left:
+                    _pan += new Vector(panStep, 0);
+                    break;
+                case Key.Right:
+                    _pan += new Vector(-panStep, 0);
+                    break;
+                case Key.Up:
+                    _pan += new Vector(0, panStep);
+                    break;
+                case Key.Down:
+                    _pan += new Vector(0, -panStep);
+                    break;
+                default:
+                    return;
+            }
             InvalidateVisual();
             e.Handled = true;
         }

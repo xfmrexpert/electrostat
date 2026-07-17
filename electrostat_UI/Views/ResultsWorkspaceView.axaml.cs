@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Interactivity;
 
 namespace electrostat_UI.Views
 {
@@ -8,5 +9,11 @@ namespace electrostat_UI.Views
         {
             InitializeComponent();
         }
+
+        private void FitFieldPlot(object? sender, RoutedEventArgs e) => FieldPlot.ResetView();
+
+        private void ZoomFieldPlotIn(object? sender, RoutedEventArgs e) => FieldPlot.ZoomIn();
+
+        private void ZoomFieldPlotOut(object? sender, RoutedEventArgs e) => FieldPlot.ZoomOut();
     }
 }

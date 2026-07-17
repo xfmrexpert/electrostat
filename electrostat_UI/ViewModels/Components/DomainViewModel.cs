@@ -5,10 +5,39 @@ namespace electrostat_UI.ViewModels.Components
 {
     public partial class DomainViewModel : ObservableObject
     {
-        [ObservableProperty] private double _rInner;
-        [ObservableProperty] private double _rOuter;
-        [ObservableProperty] private double _zLower;
-        [ObservableProperty] private double _zUpper;
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(ValidationMessage))]
+        [NotifyPropertyChangedFor(nameof(HasValidationError))]
+        private double _rInner;
+
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(ValidationMessage))]
+        [NotifyPropertyChangedFor(nameof(HasValidationError))]
+        private double _rOuter;
+
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(ValidationMessage))]
+        [NotifyPropertyChangedFor(nameof(HasValidationError))]
+        private double _zLower;
+
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(ValidationMessage))]
+        [NotifyPropertyChangedFor(nameof(HasValidationError))]
+        private double _zUpper;
+
+        public string? ValidationMessage
+        {
+            get
+            {
+                if (ROuter <= RInner)
+                    return "Outer radius must be greater than inner radius.";
+                if (ZUpper <= ZLower)
+                    return "Upper axial position must be greater than lower axial position.";
+                return null;
+            }
+        }
+
+        public bool HasValidationError => ValidationMessage != null;
 
         public DomainViewModel() { }
 

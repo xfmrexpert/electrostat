@@ -6,23 +6,28 @@
 			 mc:Ignorable="d" d:DesignWidth="260" d:DesignHeight="240"
 			 x:Class="electrostat_UI.Views.Components.WindingEditorView"
 			 x:DataType="cvm:WindingViewModel">
-	<StackPanel Spacing="4">
-		<TextBlock Text="Winding" FontWeight="SemiBold"/>
-		<Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="2" ColumnSpacing="6">
-			<TextBlock Grid.Row="0" Grid.Column="0" Text="Name" VerticalAlignment="Center"/>
-			<TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Name, UpdateSourceTrigger=LostFocus}"/>
-			<TextBlock Grid.Row="1" Grid.Column="0" Text="R0" VerticalAlignment="Center"/>
-			<NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding R0}"/>
-			<TextBlock Grid.Row="2" Grid.Column="0" Text="Z bottom" VerticalAlignment="Center"/>
-			<NumericUpDown Grid.Row="2" Grid.Column="1" Value="{Binding ZBottom}"/>
-			<TextBlock Grid.Row="3" Grid.Column="0" Text="Width" VerticalAlignment="Center"/>
-			<NumericUpDown Grid.Row="3" Grid.Column="1" Value="{Binding Width}"/>
-			<TextBlock Grid.Row="4" Grid.Column="0" Text="Height" VerticalAlignment="Center"/>
-			<NumericUpDown Grid.Row="4" Grid.Column="1" Value="{Binding Height}"/>
-			<TextBlock Grid.Row="5" Grid.Column="0" Text="Fillet R" VerticalAlignment="Center"/>
-			<NumericUpDown Grid.Row="5" Grid.Column="1" Value="{Binding FilletR}"/>
-			<TextBlock Grid.Row="6" Grid.Column="0" Text="Voltage" VerticalAlignment="Center"/>
-			<NumericUpDown Grid.Row="6" Grid.Column="1" Value="{Binding Voltage}"/>
+	<StackPanel Spacing="8">
+		<TextBlock Classes="page-title" Text="Winding"/>
+		<TextBlock Classes="section-title" Text="General"/>
+		<Grid Classes="form-grid" ColumnDefinitions="*,110,Auto" RowDefinitions="Auto">
+			<TextBlock Classes="form-label" Text="Name"/>
+			<TextBox Grid.Column="1" Grid.ColumnSpan="2" Classes="form-control" Text="{Binding Name, UpdateSourceTrigger=LostFocus}"/>
 		</Grid>
+		<TextBlock Classes="section-title" Text="Geometry" Margin="0,8,0,0"/>
+		<Grid Classes="form-grid" ColumnDefinitions="*,110,Auto" RowDefinitions="Auto,Auto,Auto,Auto">
+			<TextBlock Grid.Row="0" Classes="form-label" Text="Inner radius"/><NumericUpDown Grid.Row="0" Grid.Column="1" Classes="form-control" Value="{Binding R0}"/><TextBlock Grid.Row="0" Grid.Column="2" Classes="form-unit" Text="mm"/>
+			<TextBlock Grid.Row="1" Classes="form-label" Text="Bottom position"/><NumericUpDown Grid.Row="1" Grid.Column="1" Classes="form-control" Value="{Binding ZBottom}"/><TextBlock Grid.Row="1" Grid.Column="2" Classes="form-unit" Text="mm"/>
+			<TextBlock Grid.Row="2" Classes="form-label" Text="Radial width"/><NumericUpDown Grid.Row="2" Grid.Column="1" Classes="form-control" Value="{Binding Width}"/><TextBlock Grid.Row="2" Grid.Column="2" Classes="form-unit" Text="mm"/>
+			<TextBlock Grid.Row="3" Classes="form-label" Text="Axial height"/><NumericUpDown Grid.Row="3" Grid.Column="1" Classes="form-control" Value="{Binding Height}"/><TextBlock Grid.Row="3" Grid.Column="2" Classes="form-unit" Text="mm"/>
+		</Grid>
+		<TextBlock Classes="section-title" Text="Electrical" Margin="0,8,0,0"/>
+		<Grid Classes="form-grid" ColumnDefinitions="*,110,Auto" RowDefinitions="Auto">
+			<TextBlock Classes="form-label" Text="Voltage"/><NumericUpDown Grid.Column="1" Classes="form-control" Value="{Binding Voltage}"/><TextBlock Grid.Column="2" Classes="form-unit" Text="V"/>
+		</Grid>
+		<Expander Classes="inspector-section" Header="Advanced" IsExpanded="False">
+			<Grid Classes="form-grid" ColumnDefinitions="*,110,Auto" RowDefinitions="Auto" Margin="0,6,0,0">
+				<TextBlock Classes="form-label" Text="Corner fillet radius"/><NumericUpDown Grid.Column="1" Classes="form-control" Value="{Binding FilletR}"/><TextBlock Grid.Column="2" Classes="form-unit" Text="mm"/>
+			</Grid>
+		</Expander>
 	</StackPanel>
 </UserControl>

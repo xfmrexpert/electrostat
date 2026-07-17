@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 using electrostat;
 using GeometryLib;
@@ -27,7 +28,11 @@ namespace electrostat_UI.ViewModels
         public ObservableCollection<CutResult> CutResults { get; } = new();
 
         /// <summary>The cut whose scenarios / plots are currently shown. Selecting it cascades down.</summary>
-        [ObservableProperty] private CutResult? _selectedCutResult;
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(HasSelectedCut))]
+        private CutResult? _selectedCutResult;
+
+        public bool HasSelectedCut => SelectedCutResult != null;
 
         // ---- Per-cut scenarios ----
 
@@ -35,19 +40,51 @@ namespace electrostat_UI.ViewModels
         public ObservableCollection<ScenarioResult> ScenarioResults { get; } = new();
 
         /// <summary>The scenario whose field plot + stress table are shown for the selected cut.</summary>
-        [ObservableProperty] private ScenarioResult? _selectedScenarioResult;
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(HasSelectedScenario))]
+        [NotifyPropertyChangedFor(nameof(SelectedScenarioStatus))]
+        private ScenarioResult? _selectedScenarioResult;
+
+        public bool HasSelectedScenario => SelectedScenarioResult != null;
+
+        public string SelectedScenarioStatus => SelectedScenarioResult?.StatusDetail ?? string.Empty;
 
         // ---- Field plot ----
 
-        [ObservableProperty] private FEMSolution? _currentSolution;
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(HasCurrentSolution))]
+        [NotifyPropertyChangedFor(nameof(HasNoCurrentSolution))]
+        private FEMSolution? _currentSolution;
         [ObservableProperty] private Geometry? _currentGeometry;
-        [ObservableProperty] private IReadOnlyList<StreamlineWithMargin>? _streamlines;
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(HasStreamlines))]
+        [NotifyPropertyChangedFor(nameof(HasNoStreamlines))]
+        private IReadOnlyList<StreamlineWithMargin>? _streamlines;
+
+        public bool HasCurrentSolution => CurrentSolution != null;
+
+        public bool HasNoCurrentSolution => CurrentSolution == null;
+
+        public bool HasStreamlines => Streamlines is { Count: > 0 };
+
+        public bool HasNoStreamlines => !HasStreamlines;
 
         public string[] AvailableFields { get; } = new[] { "V", "|E|" };
         [ObservableProperty] private string _selectedField = "|E|";
         [ObservableProperty] private bool _showResultsMesh = false;
         [ObservableProperty] private bool _showResultsOutlines = true;
         [ObservableProperty] private bool _showStreamlines = true;
+
+        public string[] AnalysisModes { get; } = new[] { "Field", "Stress", "Streamlines", "Scenario Table" };
+
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(IsFieldAnalysis))]
+        [NotifyPropertyChangedFor(nameof(IsDetailAnalysis))]
+        private string _selectedAnalysisMode = "Field";
+
+        public bool IsFieldAnalysis => SelectedAnalysisMode == "Field";
+
+        public bool IsDetailAnalysis => !IsFieldAnalysis;
 
         // ---- Per-streamline stress ----
 
@@ -78,6 +115,20 @@ namespace electrostat_UI.ViewModels
         /// <summary>True once at least one cut has been solved and published.</summary>
         public bool HasResults => CutResults.Count > 0;
 
+        public bool HasNoResults => !HasResults;
+
+        public string GoverningMarginText => CutResults.FirstOrDefault(cut => cut.IsGoverning)?.MarginText ?? "—";
+
+        public string GoverningCutText => CutResults.FirstOrDefault(cut => cut.IsGoverning)?.DisplayName ?? "—";
+
+        public string MaximumFieldText => CutResults.Count == 0
+            ? "—"
+            : $"{CutResults.Max(cut => cut.MaxField):N1} kV/mm";
+
+        public string SolveCoverageText => CutResults.Count == 0
+            ? "0 / 0"
+            : $"{CutResults.Sum(cut => cut.SolvedScenarioCount)} / {CutResults.Sum(cut => cut.ScenarioCount)}";
+
         /// <summary>
         /// Replace the workspace with a freshly solved set of cuts: flag the governing
         /// (overall worst-margin) cut, repopulate the all-cuts summary, and select the
@@ -106,6 +157,8 @@ namespace electrostat_UI.ViewModels
                 ?? (CutResults.Count > 0 ? CutResults[0] : null);
 
             OnPropertyChanged(nameof(HasResults));
+            OnPropertyChanged(nameof(HasNoResults));
+            NotifySummaryChanged();
         }
 
         /// <summary>Clear all published results (e.g. when a new transformer is loaded).</summary>
@@ -114,6 +167,16 @@ namespace electrostat_UI.ViewModels
             CutResults.Clear();
             SelectedCutResult = null;
             OnPropertyChanged(nameof(HasResults));
+            OnPropertyChanged(nameof(HasNoResults));
+            NotifySummaryChanged();
+        }
+
+        private void NotifySummaryChanged()
+        {
+            OnPropertyChanged(nameof(GoverningMarginText));
+            OnPropertyChanged(nameof(GoverningCutText));
+            OnPropertyChanged(nameof(MaximumFieldText));
+            OnPropertyChanged(nameof(SolveCoverageText));
         }
 
         partial void OnSelectedCutResultChanged(CutResult? value)

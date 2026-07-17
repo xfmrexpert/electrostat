@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
@@ -21,7 +22,7 @@ namespace electrostat.IO
     public static class TransformerSerializer
     {
         /// <summary>Current schema version written to new files.</summary>
-        public const int CurrentVersion = 1;
+        public const int CurrentVersion = 2;
 
         /// <summary>The file extension (including the dot) used for saved cases.</summary>
         public const string FileExtension = ".estat";
@@ -69,7 +70,53 @@ namespace electrostat.IO
             if (file?.Transformer is null)
                 throw new InvalidDataException("The file does not contain a transformer definition.");
 
-            return file.Transformer;
+            return file.Version < 2
+                ? MigrateVersion1(file.Transformer)
+                : file.Transformer;
+        }
+
+        private static Transformer MigrateVersion1(Transformer transformer)
+        {
+            var pressboards = transformer.Pressboards
+                .Select(component => component with
+                {
+                    RelativePermittivity = DielectricDefaults.SolidInsulationRelativePermittivity,
+                })
+                .ToList();
+            var angleRings = transformer.AngleRings
+                .Select(component => component with
+                {
+                    RelativePermittivity = DielectricDefaults.SolidInsulationRelativePermittivity,
+                })
+                .ToList();
+            var staticRings = transformer.StaticRings
+                .Select(component => component with
+                {
+                    PaperRelativePermittivity = DielectricDefaults.SolidInsulationRelativePermittivity,
+                })
+                .ToList();
+            var interphaseBarriers = transformer.InterphaseBarriers
+                .Select(component => component with
+                {
+                    RelativePermittivity = DielectricDefaults.SolidInsulationRelativePermittivity,
+                })
+                .ToList();
+            var interphaseAngleRings = transformer.InterphaseAngleRings
+                .Select(component => component with
+                {
+                    RelativePermittivity = DielectricDefaults.SolidInsulationRelativePermittivity,
+                })
+                .ToList();
+
+            return transformer with
+            {
+                OilRelativePermittivity = DielectricDefaults.OilRelativePermittivity,
+                Pressboards = pressboards,
+                AngleRings = angleRings,
+                StaticRings = staticRings,
+                InterphaseBarriers = interphaseBarriers,
+                InterphaseAngleRings = interphaseAngleRings,
+            };
         }
 
         /// <summary>Serialize <paramref name="transformer"/> and write it to <paramref name="path"/>.</summary>

@@ -7,20 +7,21 @@
 			 mc:Ignorable="d" d:DesignWidth="260" d:DesignHeight="320"
 			 x:Class="electrostat_UI.Views.Components.CutEditorView"
 			 x:DataType="cvm:CutViewModel">
-	<StackPanel Spacing="4">
-		<TextBlock Text="Cut" FontWeight="SemiBold"/>
-		<Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="4" ColumnSpacing="6">
-			<TextBlock Grid.Row="0" Grid.Column="0" Text="Name" VerticalAlignment="Center"/>
-			<TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Name, UpdateSourceTrigger=LostFocus}"/>
-			<TextBlock Grid.Row="1" Grid.Column="0" Text="Geometry" VerticalAlignment="Center"/>
+	<StackPanel Spacing="8">
+		<TextBlock Classes="page-title" Text="Cut"/>
+		<TextBlock Classes="section-title" Text="General"/>
+		<Grid Classes="form-grid" ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="4">
+			<TextBlock Grid.Row="0" Classes="form-label" Text="Name"/>
+			<TextBox Grid.Row="0" Grid.Column="1" Classes="form-control" Text="{Binding Name, UpdateSourceTrigger=LostFocus}"/>
+			<TextBlock Grid.Row="1" Classes="form-label" Text="Geometry model"/>
 			<ComboBox Grid.Row="1" Grid.Column="1" HorizontalAlignment="Stretch"
 					  ItemsSource="{Binding AvailableGeometryTypes}"
 					  SelectedItem="{Binding GeometryType, Mode=TwoWay}"/>
 			<CheckBox Grid.Row="2" Grid.Column="1" Content="Include adjacent phase"
 					  IsChecked="{Binding IncludeAdjacentPhase, Mode=TwoWay}"/>
 		</Grid>
-		<TextBlock Text="A planar geometry type with the adjacent phase included models the inter-phase region between two legs."
-				   FontStyle="Italic" FontSize="11" Foreground="Gray" TextWrapping="Wrap"/>
+		<TextBlock Classes="help-text" Text="For planar cuts, including the adjacent phase models the inter-phase region between transformer legs."/>
+		<TextBlock Classes="section-title" Text="Solve Domain" Margin="0,8,0,0"/>
 		<cviews:DomainEditorView DataContext="{Binding Domain}" Margin="0,6,0,0"/>
 	</StackPanel>
 </UserControl>

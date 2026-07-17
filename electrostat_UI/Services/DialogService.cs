@@ -56,7 +56,7 @@ namespace electrostat_UI.Services
             return file?.TryGetLocalPath();
         }
 
-        public Task<SaveChangesResult> ConfirmSaveChangesAsync()
-            => SaveChangesDialog.ShowAsync(_owner);
+        public Task<SaveChangesResult> ConfirmSaveChangesAsync(string documentName)
+            => SaveChangesDialog.ShowAsync(_owner, documentName);
     }
 }

@@ -15,6 +15,7 @@ namespace electrostat
         double Thickness,
         double Height,
         Taper? TaperTop = null,
-        Taper? TaperBottom = null
+        Taper? TaperBottom = null,
+        double RelativePermittivity = DielectricDefaults.SolidInsulationRelativePermittivity
     );
 }

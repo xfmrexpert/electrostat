@@ -33,7 +33,8 @@ namespace electrostat
         IReadOnlyList<AngleRing> InterphaseAngleRings,
         Dictionary<string, double> Voltages,
         IReadOnlyList<VoltageScenario>? Scenarios,
-        IReadOnlyList<Cut> Cuts)
+        IReadOnlyList<Cut> Cuts,
+        double OilRelativePermittivity = DielectricDefaults.OilRelativePermittivity)
     {
         /// <summary>
         /// Radial coordinate used to mirror the adjacent phase. A component at radial extent
@@ -126,7 +127,8 @@ namespace electrostat
                 staticRings,
                 voltages,
                 Scenarios,
-                cut.GeometryType);
+                cut.GeometryType,
+                OilRelativePermittivity);
         }
     }
 }

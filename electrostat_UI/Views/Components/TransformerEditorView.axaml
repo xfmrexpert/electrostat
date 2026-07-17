@@ -1,0 +1,34 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+			 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+			 xmlns:vm="using:electrostat_UI.ViewModels"
+			 xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+			 xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+			 mc:Ignorable="d" d:DesignWidth="300" d:DesignHeight="260"
+			 x:Class="electrostat_UI.Views.Components.TransformerEditorView"
+			 x:DataType="vm:TransformerViewModel">
+	<StackPanel Spacing="8">
+		<TextBlock Classes="page-title" Text="Transformer Case"/>
+		<TextBlock Classes="section-title" Text="General"/>
+		<Grid Classes="form-grid" ColumnDefinitions="*,110,Auto" RowDefinitions="Auto,Auto,Auto">
+			<TextBlock Grid.Row="0" Classes="form-label" Text="Name"/>
+			<TextBox Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="2" Classes="form-control"
+					 Text="{Binding Name, UpdateSourceTrigger=LostFocus}"/>
+			<TextBlock Grid.Row="1" Classes="form-label" Text="Core leg radius"/>
+			<NumericUpDown Grid.Row="1" Grid.Column="1" Classes="form-control" Value="{Binding CoreLegRadius}"/>
+			<TextBlock Grid.Row="1" Grid.Column="2" Classes="form-unit" Text="mm"/>
+			<TextBlock Grid.Row="2" Classes="form-label" Text="Window width"/>
+			<NumericUpDown Grid.Row="2" Grid.Column="1" Classes="form-control" Value="{Binding WindowWidth}"/>
+			<TextBlock Grid.Row="2" Grid.Column="2" Classes="form-unit" Text="mm"/>
+		</Grid>
+
+		<TextBlock Classes="section-title" Text="Materials" Margin="0,8,0,0"/>
+		<Grid Classes="form-grid" ColumnDefinitions="*,110,Auto" RowDefinitions="Auto">
+			<TextBlock Classes="form-label" Text="Oil relative permittivity" ToolTip.Tip="Dimensionless dielectric constant εᵣ used for the oil region in every cut."/>
+			<NumericUpDown Grid.Column="1" Classes="form-control" Value="{Binding OilRelativePermittivity}" FormatString="0.###"/>
+			<TextBlock Grid.Column="2" Classes="form-unit" Text="εᵣ"/>
+		</Grid>
+		<TextBlock Classes="validation-error" IsVisible="{Binding HasPermittivityError}"
+				   Text="{Binding PermittivityValidationMessage}"/>
+		<TextBlock Classes="help-text" Text="Oil permittivity is shared by every cut. Solid-insulation values are configured on each component."/>
+	</StackPanel>
+</UserControl>
