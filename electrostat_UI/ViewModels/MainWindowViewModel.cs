@@ -65,9 +65,6 @@ namespace electrostat_UI.ViewModels
 
         public bool HasNoCurrentGeometry => !HasCurrentGeometry;
 
-        [ObservableProperty]
-        private bool _isGeometryLegendVisible = true;
-
         /// <summary>
         /// Per-surface semantic classification for the active geometry, letting the geometry
         /// view color each region by component type (winding, pressboard, static-ring paper,
@@ -958,7 +955,8 @@ namespace electrostat_UI.ViewModels
             SolveOperationText = hasScenarios
                 ? $"Solving {label} — {total} scenarios"
                 : $"Solving {label}";
-            await Task.Run(() => builtModel.Solve());
+            var progress = new Progress<MFEMProgressEvent>(ReportSolverProgress);
+            await Task.Run(() => builtModel.Solve(progress));
 
             var results = new List<ScenarioResult>(builtModel.ScenarioSolutions.Count);
             foreach (var scenarioSolution in builtModel.ScenarioSolutions)
@@ -986,6 +984,56 @@ namespace electrostat_UI.ViewModels
             }
 
             return results;
+        }
+
+        private void ReportSolverProgress(MFEMProgressEvent progress)
+        {
+            if (!Dispatcher.UIThread.CheckAccess())
+            {
+                Dispatcher.UIThread.Post(() => ReportSolverProgress(progress));
+                return;
+            }
+
+            if (progress.EventType == MFEMProgressEventType.Operation)
+            {
+                if (string.IsNullOrWhiteSpace(progress.Name)) return;
+
+                switch (progress.State)
+                {
+                    case "started":
+                        SolveOperationText = progress.Name;
+                        StatusMessage = $"Started {progress.Name}...";
+                        break;
+                    case "completed":
+                        SolveOperationText = progress.Name;
+                        StatusMessage = progress.ElapsedSeconds is double elapsed
+                            ? $"Completed {progress.Name} in {elapsed:0.###} s."
+                            : $"Completed {progress.Name}.";
+                        break;
+                    case "failed":
+                        SolveOperationText = $"Failed: {progress.Name}";
+                        StatusMessage = $"Solver operation failed: {progress.Name}.";
+                        break;
+                }
+
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(progress.Message)) return;
+
+            switch (progress.Level)
+            {
+                case "status":
+                case "solver":
+                    StatusMessage = progress.Message;
+                    break;
+                case "warning":
+                    StatusMessage = $"Warning: {progress.Message}";
+                    break;
+                case "error":
+                    StatusMessage = $"Solver error: {progress.Message}";
+                    break;
+            }
         }
 
         /// <summary>

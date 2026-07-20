@@ -68,7 +68,7 @@
         </DataTemplate>
     </Window.DataTemplates>
 
-    <Grid RowDefinitions="Auto,Auto,*,Auto">
+    <Grid RowDefinitions="Auto,*,Auto">
         <Menu Grid.Row="0">
             <MenuItem Header="_File">
                 <MenuItem Header="_New" Command="{Binding NewCommand}" HotKey="Ctrl+N" InputGesture="Ctrl+N"/>
@@ -124,44 +124,7 @@
             </MenuItem>
         </Menu>
 
-        <Border Grid.Row="1" Background="{DynamicResource PaneBackgroundBrush}"
-                BorderBrush="{DynamicResource SubtleBorderBrush}" BorderThickness="0,0,0,1"
-                Padding="8,6">
-            <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto" ColumnSpacing="6">
-                <Button Grid.Column="0" Classes="command" Content="New" Command="{Binding NewCommand}" HotKey="Ctrl+N"/>
-                <Button Grid.Column="1" Classes="command" Content="Open…" Command="{Binding OpenCommand}" HotKey="Ctrl+O"/>
-                <Button Grid.Column="2" Classes="command" Content="Save" Command="{Binding SaveCommand}" HotKey="Ctrl+S"/>
-                <Button Grid.Column="3" Classes="command" Content="Add…">
-                    <Button.Flyout>
-                        <MenuFlyout>
-                            <MenuItem Header="Winding" Command="{Binding AddWindingCommand}"/>
-                            <MenuItem Header="Pressboard" Command="{Binding AddPressboardCommand}"/>
-                            <MenuItem Header="Angle Ring" Command="{Binding AddAngleRingCommand}"/>
-                            <MenuItem Header="Static Ring" Command="{Binding AddStaticRingCommand}"/>
-                            <Separator/>
-                            <MenuItem Header="Voltage Scenario" Command="{Binding AddScenarioCommand}"/>
-                            <MenuItem Header="Cut" Command="{Binding AddCutCommand}"/>
-                        </MenuFlyout>
-                    </Button.Flyout>
-                </Button>
-
-                <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="6">
-                    <Button Classes="primary-command" Content="Solve Cut" Command="{Binding SolveCutCommand}" HotKey="F5"/>
-                    <Button Classes="command" Content="Solve All" Command="{Binding SolveAllCutsCommand}" HotKey="Ctrl+F5"/>
-                </StackPanel>
-
-                <Border Grid.Column="6" Classes="subtle-pane" Padding="3">
-                    <StackPanel Orientation="Horizontal" Spacing="2">
-                        <Button Classes="command" Content="Design" Command="{Binding ShowDesignWorkspaceCommand}"
-                                FontWeight="{Binding IsDesignWorkspace, Converter={x:Static vm:BoolToWeightConverter.Instance}}"/>
-                        <Button Classes="command" Content="Results" Command="{Binding ShowResultsWorkspaceCommand}"
-                                FontWeight="{Binding IsResultsWorkspace, Converter={x:Static vm:BoolToWeightConverter.Instance}}"/>
-                    </StackPanel>
-                </Border>
-            </Grid>
-        </Border>
-
-        <TabControl Grid.Row="2" SelectedIndex="{Binding ActiveTabIndex, Mode=TwoWay}">
+        <TabControl Grid.Row="1" SelectedIndex="{Binding ActiveTabIndex, Mode=TwoWay}">
             <TabItem Header="Design">
                 <Grid ColumnDefinitions="Auto,4,*,4,Auto" Margin="8">
                     <Border Grid.Column="0" Classes="pane" Width="250" MinWidth="190" MaxWidth="420"
@@ -249,20 +212,9 @@
                                     <Button Content="−" Click="ZoomGeometryOut" ToolTip.Tip="Zoom out" AutomationProperties.Name="Zoom geometry out"/>
                                     <Button Content="+" Click="ZoomGeometryIn" ToolTip.Tip="Zoom in" AutomationProperties.Name="Zoom geometry in"/>
                                     <Button Content="Fit" Click="FitGeometry" ToolTip.Tip="Fit geometry to the canvas" AutomationProperties.Name="Fit geometry to canvas"/>
-                                    <ToggleButton Content="Legend" IsChecked="{Binding IsGeometryLegendVisible, Mode=TwoWay}"/>
                                 </StackPanel>
-                                <Border Classes="subtle-pane" HorizontalAlignment="Left" VerticalAlignment="Top"
-                                        Margin="10" IsVisible="{Binding IsGeometryLegendVisible}">
-                                    <StackPanel Spacing="4">
-                                        <TextBlock Text="Surface legend" FontWeight="SemiBold"/>
-                                        <TextBlock Text="■  Winding (copper)"/>
-                                        <TextBlock Text="■  Pressboard / angle ring"/>
-                                        <TextBlock Text="■  Static-ring paper / metal"/>
-                                        <TextBlock Text="■  Oil domain"/>
-                                    </StackPanel>
-                                </Border>
                                 <Border Classes="subtle-pane" HorizontalAlignment="Left" VerticalAlignment="Bottom"
-                                        Margin="10" IsVisible="{Binding HasCurrentGeometry}">
+                                        Margin="10" IsVisible="{Binding #GeometryCanvas.IsPointerCoordinateVisible}">
                                     <TextBlock Text="{Binding #GeometryCanvas.PointerCoordinateText}" FontFamily="Consolas"/>
                                 </Border>
                                 <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
@@ -306,17 +258,15 @@
             </TabItem>
         </TabControl>
 
-        <Border Grid.Row="3" Classes="status-region">
-            <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="12">
-                <TextBlock Grid.Column="0" Text="{Binding DocumentStateText}" FontWeight="SemiBold"
-                           VerticalAlignment="Center"/>
-                <Border Grid.Column="1" Classes="subtle-pane" Padding="6,2">
+        <Border Grid.Row="2" Classes="status-region">
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                <Border Grid.Column="0" Classes="subtle-pane" Padding="6,2">
                     <TextBlock Text="{Binding StatusIndicator}" FontSize="11" FontWeight="SemiBold"
                                VerticalAlignment="Center"/>
                 </Border>
-                <TextBlock Grid.Column="2" Text="{Binding StatusMessage}" Classes="secondary"
+                <TextBlock Grid.Column="1" Text="{Binding StatusMessage}" Classes="secondary"
                            TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="8"
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8"
                             IsVisible="{Binding IsSolving}">
                     <TextBlock Text="{Binding SolveOperationText}" VerticalAlignment="Center"/>
                     <ProgressBar IsIndeterminate="True" Width="120" Height="6" VerticalAlignment="Center"/>

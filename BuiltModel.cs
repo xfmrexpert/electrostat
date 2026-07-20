@@ -109,12 +109,13 @@ namespace electrostat
         /// "&lt;scenarioName&gt;.results.msh" next to the mesh, so each scenario's results are
         /// loaded from that path. Returns 0.
         /// </summary>
-        public int Solve()
+        public int Solve(IProgress<MFEMProgressEvent>? progress = null)
         {
             ScenarioSolutions.Clear();
 
             var problem = Problem;
             if (problem == null) return -1;
+            var mfem = problem as MFEMProblem;
 
             // The solver writes each scenario's "<scenarioName>.results.msh" next to the
             // shared mesh, not next to the case.json. Co-locate the input deck there too so
@@ -122,14 +123,28 @@ namespace electrostat
             var meshDir = !string.IsNullOrEmpty(problem.MeshPath)
                 ? Path.GetDirectoryName(problem.MeshPath)
                 : null;
-            if (problem is MFEMProblem mfem && !string.IsNullOrEmpty(meshDir))
+            if (mfem != null && !string.IsNullOrEmpty(meshDir))
             {
                 mfem.Filename = Path.Combine(meshDir, "case.json");
             }
 
             // Run once: MFEMProblem writes all Scenarios to its case.json and the solver
             // evaluates them all, reusing the factorized system between permutations.
-            problem.Solve();
+            Action<MFEMProgressEvent>? progressHandler = progress == null
+                ? null
+                : progress.Report;
+            if (mfem != null && progressHandler != null)
+                mfem.ProgressChanged += progressHandler;
+
+            try
+            {
+                problem.Solve();
+            }
+            finally
+            {
+                if (mfem != null && progressHandler != null)
+                    mfem.ProgressChanged -= progressHandler;
+            }
 
             // No authored scenarios: surface whatever the problem loaded directly.
             if (problem.Scenarios.Count == 0)

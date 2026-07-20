@@ -54,12 +54,30 @@ namespace electrostat_UI.Views
             AvaloniaProperty.RegisterDirect<GeometryView, string>(
                 nameof(PointerCoordinateText), view => view.PointerCoordinateText);
 
+        public static readonly DirectProperty<GeometryView, bool> IsPointerCoordinateVisibleProperty =
+            AvaloniaProperty.RegisterDirect<GeometryView, bool>(
+                nameof(IsPointerCoordinateVisible), view => view.IsPointerCoordinateVisible);
+
         private string _pointerCoordinateText = string.Empty;
+        private bool _isPointerCoordinateVisible;
 
         public string PointerCoordinateText
         {
             get => _pointerCoordinateText;
-            private set => SetAndRaise(PointerCoordinateTextProperty, ref _pointerCoordinateText, value);
+            private set
+            {
+                SetAndRaise(PointerCoordinateTextProperty, ref _pointerCoordinateText, value);
+                IsPointerCoordinateVisible = !string.IsNullOrEmpty(value);
+            }
+        }
+
+        public bool IsPointerCoordinateVisible
+        {
+            get => _isPointerCoordinateVisible;
+            private set => SetAndRaise(
+                IsPointerCoordinateVisibleProperty,
+                ref _isPointerCoordinateVisible,
+                value);
         }
 
         // User-applied transform (relative to the auto-fit baseline).
