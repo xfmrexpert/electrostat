@@ -54,7 +54,7 @@ namespace electrostat_UI.ViewModels
         [ObservableProperty]
         [NotifyPropertyChangedFor(nameof(HasCurrentSolution))]
         [NotifyPropertyChangedFor(nameof(HasNoCurrentSolution))]
-        private FEMSolution? _currentSolution;
+        private FieldSolution? _currentSolution;
         [ObservableProperty] private Geometry? _currentGeometry;
         [ObservableProperty]
         [NotifyPropertyChangedFor(nameof(HasStreamlines))]

@@ -86,7 +86,7 @@ namespace electrostat
         /// </summary>
         /// <param name="Name">Scenario display name (matches the authored scenario / "Base").</param>
         /// <param name="Solution">The loaded field, or null if that scenario's results were missing.</param>
-        public sealed record ScenarioSolution(string Name, FEMSolution? Solution);
+        public sealed record ScenarioSolution(string Name, FieldSolution? Solution);
 
         /// <summary>
         /// Results of the most recent <see cref="Solve"/>, one entry per scenario in build
@@ -95,44 +95,60 @@ namespace electrostat
         public List<ScenarioSolution> ScenarioSolutions { get; } = new();
 
         /// <summary>
+        /// Why the most recent <see cref="Solve"/> could not load results, or null when it
+        /// loaded them. Use this rather than <see cref="MFEMProblem.LastLoadError"/>: TfmrLib's
+        /// reader only understands coupling-matrix archives and reports a spurious failure
+        /// for every field run.
+        /// </summary>
+        public string? LoadError { get; private set; }
+
+        /// <summary>
         /// Convenience accessor for the first solved scenario's field (null until a solve has
         /// run or if no scenario produced results).
         /// </summary>
-        public FEMSolution? Solution =>
+        public FieldSolution? Solution =>
             ScenarioSolutions.FirstOrDefault(s => s.Solution != null)?.Solution;
 
         /// <summary>
         /// Solve the FEM problem as built, evaluating every voltage <see cref="Scenario"/>
         /// created during the build in a single solver invocation against the shared mesh,
         /// then collect each scenario's field into <see cref="ScenarioSolutions"/> (with
-        /// human-readable physical names populated). The solver writes one
-        /// "&lt;scenarioName&gt;.results.msh" next to the mesh, so each scenario's results are
-        /// loaded from that path. Returns 0.
+        /// human-readable physical names populated). The solver writes one HDF5 archive,
+        /// "results.h5" next to the mesh, holding every scenario. Returns 0.
         /// </summary>
         public int Solve(IProgress<MFEMProgressEvent>? progress = null)
         {
             ScenarioSolutions.Clear();
+            LoadError = null;
 
             var problem = Problem;
             if (problem == null) return -1;
             var mfem = problem as MFEMProblem;
 
-            // The solver writes each scenario's "<scenarioName>.results.msh" next to the
-            // shared mesh, not next to the case.json. Co-locate the input deck there too so
-            // every build's deck sits beside its mesh and results.
+            // Co-locate the input deck and the results archive with the mesh so every
+            // build's files sit together. The results path must be absolute: MFEMProblem
+            // resolves a relative one against the deck's folder when writing it, but checks
+            // it as-is when loading.
             var meshDir = !string.IsNullOrEmpty(problem.MeshPath)
-                ? Path.GetDirectoryName(problem.MeshPath)
+                ? Path.GetDirectoryName(Path.GetFullPath(problem.MeshPath))
                 : null;
+            string? resultsFile = null;
             if (mfem != null && !string.IsNullOrEmpty(meshDir))
             {
                 mfem.Filename = Path.Combine(meshDir, "case.json");
+                resultsFile = Path.Combine(meshDir, "results.h5");
+                mfem.ResultsFile = resultsFile;
+
+                // Never load a previous run's archive if this solve fails to write one.
+                if (File.Exists(resultsFile))
+                    File.Delete(resultsFile);
             }
 
             // Run once: MFEMProblem writes all Scenarios to its case.json and the solver
             // evaluates them all, reusing the factorized system between permutations.
             Action<MFEMProgressEvent>? progressHandler = progress == null
                 ? null
-                : progress.Report;
+                : e => { if (!IsSpuriousLoadError(e)) progress.Report(e); };
             if (mfem != null && progressHandler != null)
                 mfem.ProgressChanged += progressHandler;
 
@@ -146,38 +162,48 @@ namespace electrostat
                     mfem.ProgressChanged -= progressHandler;
             }
 
-            // No authored scenarios: surface whatever the problem loaded directly.
+            // MFEMProblem.Results is ignored: TfmrLib's reader handles coupling-matrix
+            // archives only. Read the scenario fields here instead.
+            var loaded = new List<FieldSolution>();
+            if (resultsFile == null)
+            {
+                LoadError = "The mesh path was not set, so there is no results file to read.";
+            }
+            else
+            {
+                try
+                {
+                    loaded = Hdf5FieldResultsReader.Read(resultsFile);
+                }
+                catch (Exception ex)
+                {
+                    LoadError = $"Failed to load FEM results from '{resultsFile}': {ex.Message}";
+                }
+            }
+            if (LoadError != null)
+                progress?.Report(new MFEMProgressEvent(MFEMProgressEventType.Message, Level: "error", Message: LoadError));
+
+            foreach (var sol in loaded)
+                PopulatePhysicalNames(sol);
+
+            // No authored scenarios: surface whatever the solver produced.
             if (problem.Scenarios.Count == 0)
             {
-                var only = problem.Solution;
-                PopulatePhysicalNames(only);
-                ScenarioSolutions.Add(new ScenarioSolution("Base", only));
+                ScenarioSolutions.Add(new ScenarioSolution("Base", loaded.FirstOrDefault()));
                 return 0;
             }
 
-            // Collect each scenario's field from the per-scenario results file the solver
-            // wrote next to the mesh.
+            // Match archive scenarios to authored ones by name, taking each archive entry
+            // once so repeated names still pair up in solve order.
+            var unclaimed = new List<FieldSolution>(loaded);
             foreach (var scenario in problem.Scenarios)
             {
-                FEMSolution? sol = null;
-                if (!string.IsNullOrEmpty(meshDir))
-                {
-                    var resultsPath = Path.Combine(meshDir, scenario.Name + ".results.msh");
-                    if (File.Exists(resultsPath))
-                    {
-                        try { sol = FEMSolution.Load(resultsPath); }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine($"Failed to load results for scenario '{scenario.Name}' from '{resultsPath}': {ex.Message}");
-                        }
-                    }
-                    else
-                    {
-                        Console.WriteLine($"No results file for scenario '{scenario.Name}' at '{resultsPath}'.");
-                    }
-                }
+                var sol = unclaimed.FirstOrDefault(s => s.ScenarioName == scenario.Name);
+                if (sol != null)
+                    unclaimed.Remove(sol);
+                else if (LoadError == null)
+                    Console.WriteLine($"No results for scenario '{scenario.Name}' in '{resultsFile}'.");
 
-                PopulatePhysicalNames(sol);
                 ScenarioSolutions.Add(new ScenarioSolution(scenario.Name, sol));
             }
 
@@ -185,13 +211,25 @@ namespace electrostat
         }
 
         /// <summary>
-        /// The MFEM solver does not currently emit a $PhysicalNames section in its
-        /// results.msh, so populate <see cref="FEMSolution.PhysicalNames"/> from the names
+        /// MFEMProblem tries to load every results archive with TfmrLib's coupling-matrix
+        /// reader, which fails on a field run and reports it as an error. Electrostat loads
+        /// the archive itself and reports its own failures, so drop those messages.
+        /// </summary>
+        private static bool IsSpuriousLoadError(MFEMProgressEvent e) =>
+            e.EventType == MFEMProgressEventType.Message &&
+            e.Level == "error" &&
+            e.Message != null &&
+            (e.Message.StartsWith("Failed to load FEM results from", StringComparison.Ordinal) ||
+             e.Message.StartsWith("Results file '", StringComparison.Ordinal));
+
+        /// <summary>
+        /// The solver's results archive carries no physical names, so populate
+        /// <see cref="FieldSolution.PhysicalNames"/> from the names
         /// we already know at build time (regions + Dirichlet BCs). This lets downstream
         /// code (e.g. the streamline Wiedmann overlay) look up a human-readable material
         /// name for each physical tag.
         /// </summary>
-        private void PopulatePhysicalNames(FEMSolution? sol)
+        private void PopulatePhysicalNames(FieldSolution? sol)
         {
             if (sol == null) return;
 

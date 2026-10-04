@@ -1,12 +1,11 @@
 using System;
 using System.Collections.Generic;
 using MeshLib;
-using TfmrLib.FEM;
 
 namespace electrostat
 {
     /// <summary>
-    /// <see cref="IFieldSampler"/> backed by an <see cref="FEMSolution"/>. Locates the
+    /// <see cref="IFieldSampler"/> backed by a <see cref="FieldSolution"/>. Locates the
     /// containing triangle with a <see cref="TriangleLocator"/> and interpolates fields
     /// using linear (P1) barycentric weights on the three corner nodes.
     /// </summary>
@@ -15,14 +14,14 @@ namespace electrostat
     /// V is interpolated from the continuous nodal scalar field (typically "V").
     /// </para>
     /// <para>
-    /// E is interpolated from <see cref="FEMSolution.ElementNodalFields"/> (typically
+    /// E is interpolated from <see cref="FieldSolution.ElementNodalFields"/> (typically
     /// "E") so that the discontinuity at material interfaces is preserved: the value
     /// returned for a point in element <c>k</c> is the in-element interpolation, even
-    /// when that element shares nodes with one in a different material. For 6-node
-    /// (P2) triangles all six nodal samples are used with the quadratic Lagrange shape
-    /// functions, so the result is exact for the P2 field on straight-sided triangles;
-    /// 3-node (P1) triangles use the three corner samples. The returned field is in
-    /// kV/mm (the raw FEM field is V/mm and is scaled here).
+    /// when that element shares nodes with one in a different material. E = -grad V of
+    /// the P2 potential is linear in each element, and the reader stores it as exact
+    /// values at the three corners, so barycentric interpolation reproduces it exactly
+    /// on straight-sided triangles. The returned field is in kV/mm (the raw FEM field is
+    /// V/mm and is scaled here).
     /// </para>
     /// <para>
     /// A small per-instance hint is cached so successive calls (e.g. from a streamline
@@ -34,7 +33,7 @@ namespace electrostat
         /// <summary>Scale factor converting the raw FEM field (V/mm) to kV/mm.</summary>
         private const double VPerMmToKVPerMm = 1e-3;
 
-        private readonly FEMSolution _solution;
+        private readonly FieldSolution _solution;
         private readonly TriangleLocator _locator;
         private readonly Dictionary<int, double>? _potential;
         private readonly Dictionary<int, ElementNodeField>? _eField;
@@ -42,11 +41,11 @@ namespace electrostat
         // Mutable hint for sequential queries (not thread-safe; create one sampler per tracer).
         private int _hint;
 
-        public FemFieldSampler(FEMSolution solution)
+        public FemFieldSampler(FieldSolution solution)
         {
             _solution = solution ?? throw new ArgumentNullException(nameof(solution));
             if (solution.Mesh == null)
-                throw new ArgumentException("FEMSolution has no mesh attached.", nameof(solution));
+                throw new ArgumentException("FieldSolution has no mesh attached.", nameof(solution));
 
             _locator = new TriangleLocator(solution.Mesh);
 
@@ -91,32 +90,8 @@ namespace electrostat
             // of the element-nodal field align with the locator's corner nodes N0..N2.
             double w0 = hit.B0, w1 = hit.B1, w2 = hit.B2;
 
-            if (field.NumNodes >= 6)
-            {
-                // Quadratic (P2) Lagrange interpolation using all six nodal samples so the
-                // curvature of the field inside the element is honoured (matters most in
-                // the high-gradient corners that govern insulation margins). Gmsh 6-node
-                // triangle ordering: corners 0,1,2; mid-edge nodes 3 (edge 0-1),
-                // 4 (edge 1-2), 5 (edge 2-0). The corner-based area coordinates are exact
-                // for straight-sided P2 triangles.
-                double n0 = w0 * (2.0 * w0 - 1.0);
-                double n1 = w1 * (2.0 * w1 - 1.0);
-                double n2 = w2 * (2.0 * w2 - 1.0);
-                double n3 = 4.0 * w0 * w1;
-                double n4 = 4.0 * w1 * w2;
-                double n5 = 4.0 * w2 * w0;
-
-                ex = n0 * field.Get(0, 0) + n1 * field.Get(1, 0) + n2 * field.Get(2, 0)
-                   + n3 * field.Get(3, 0) + n4 * field.Get(4, 0) + n5 * field.Get(5, 0);
-                ey = n0 * field.Get(0, 1) + n1 * field.Get(1, 1) + n2 * field.Get(2, 1)
-                   + n3 * field.Get(3, 1) + n4 * field.Get(4, 1) + n5 * field.Get(5, 1);
-            }
-            else
-            {
-                // Linear (P1) interpolation on the three corner samples.
-                ex = w0 * field.Get(0, 0) + w1 * field.Get(1, 0) + w2 * field.Get(2, 0);
-                ey = w0 * field.Get(0, 1) + w1 * field.Get(1, 1) + w2 * field.Get(2, 1);
-            }
+            ex = w0 * field.Get(0, 0) + w1 * field.Get(1, 0) + w2 * field.Get(2, 0);
+            ey = w0 * field.Get(0, 1) + w1 * field.Get(1, 1) + w2 * field.Get(2, 1);
 
             // The raw FEM field is V/mm (geometry in mm, potentials in V). Convert to
             // kV/mm here so the whole streamline/stress/margin pipeline works in kV/mm.

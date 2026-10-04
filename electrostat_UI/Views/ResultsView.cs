@@ -17,7 +17,7 @@ using electrostat_UI.ViewModels;
 namespace electrostat_UI.Views
 {
     /// <summary>
-    /// Renders the triangular FEM mesh from a <see cref="FEMSolution"/> and shades each
+    /// Renders the triangular FEM mesh from a <see cref="FieldSolution"/> and shades each
     /// element by a nodal scalar field (potential V by default).
     /// </summary>
     /// <remarks>
@@ -31,8 +31,8 @@ namespace electrostat_UI.Views
     /// </remarks>
     public class ResultsView : Control
     {
-        public static readonly StyledProperty<FEMSolution?> SolutionProperty =
-            AvaloniaProperty.Register<ResultsView, FEMSolution?>(nameof(Solution));
+        public static readonly StyledProperty<FieldSolution?> SolutionProperty =
+            AvaloniaProperty.Register<ResultsView, FieldSolution?>(nameof(Solution));
 
         public static readonly StyledProperty<string?> FieldNameProperty =
             AvaloniaProperty.Register<ResultsView, string?>(nameof(FieldName), "|E|");
@@ -52,7 +52,7 @@ namespace electrostat_UI.Views
         public static readonly StyledProperty<bool> ShowGeometryOutlinesProperty =
             AvaloniaProperty.Register<ResultsView, bool>(nameof(ShowGeometryOutlines), true);
 
-        public FEMSolution? Solution
+        public FieldSolution? Solution
         {
             get => GetValue(SolutionProperty);
             set => SetValue(SolutionProperty, value);
@@ -103,7 +103,7 @@ namespace electrostat_UI.Views
         // Cached GPU geometry (depends only on Solution + FieldName).
         private SKVertices? _cachedVertices;
         private SKPath? _cachedEdgePath;
-        private FEMSolution? _cachedSolution;
+        private FieldSolution? _cachedSolution;
         private string? _cachedFieldName;
 
         // Cached world bounds for fitting to the control.
@@ -714,7 +714,7 @@ namespace electrostat_UI.Views
         /// ParaView LUT and then linearly interpolated by the GPU across each
         /// triangle (Gouraud shading) — matches ParaView's default behaviour.
         /// </summary>
-        private void EnsureGeometry(FEMSolution sol)
+        private void EnsureGeometry(FieldSolution sol)
         {
             if (_cachedVertices != null &&
                 ReferenceEquals(_cachedSolution, sol) &&
@@ -959,7 +959,7 @@ namespace electrostat_UI.Views
         /// Computes the per-element average |E| (kV/mm) if available.
         /// </summary>
         private static bool TryComputeEMagnitudePerElement(
-            FEMSolution sol,
+            FieldSolution sol,
             out Dictionary<int, double> magnitudes)
         {
             // The raw FEM field is V/mm; scale to kV/mm to match the rest of the pipeline.

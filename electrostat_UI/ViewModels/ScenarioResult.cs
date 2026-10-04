@@ -17,7 +17,7 @@ namespace electrostat_UI.ViewModels
         public required string Name { get; init; }
 
         /// <summary>Field solution for this scenario, or null if the solve produced no results.</summary>
-        public FEMSolution? Solution { get; init; }
+        public FieldSolution? Solution { get; init; }
 
         /// <summary>Geometry used for this scenario (identical shape across scenarios).</summary>
         public Geometry? Geometry { get; init; }

@@ -966,7 +966,7 @@ namespace electrostat_UI.ViewModels
 
                 if (sol == null)
                 {
-                    var reason = (builtModel.Problem as MFEMProblem)?.LastLoadError;
+                    var reason = builtModel.LoadError;
                     results.Add(new ScenarioResult
                     {
                         Name = scenarioName,
@@ -1083,7 +1083,7 @@ namespace electrostat_UI.ViewModels
         /// The streamline list arrives sorted worst-margin first.
         /// </summary>
         private static ScenarioResult BuildScenarioResult(
-            string name, FEMSolution sol, Geometry? geom,
+            string name, FieldSolution sol, Geometry? geom,
             IReadOnlyList<StreamlineWithMargin> streamlines)
         {
             double worstMargin = double.PositiveInfinity;
@@ -1143,7 +1143,7 @@ namespace electrostat_UI.ViewModels
         /// seeding from a coarse grid and tracing forward + backward along E. Lines
         /// terminate when they cross a conductor boundary or leave the meshed domain.
         /// </summary>
-        private static IReadOnlyList<StreamlineWithMargin> BuildStreamlines(FEMSolution sol, Geometry? geom, BuiltModel model)
+        private static IReadOnlyList<StreamlineWithMargin> BuildStreamlines(FieldSolution sol, Geometry? geom, BuiltModel model)
         {
             var lines = new List<StreamlineWithMargin>();
             if (sol.Mesh == null || sol.Mesh.Nodes.Count == 0) return lines;

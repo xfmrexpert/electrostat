@@ -422,6 +422,11 @@ namespace electrostat
             // same build feeds an axisymmetric (r–z) or planar solve unchanged.
             mfemProblem.GeometryType = _case.GeometryType;
 
+            // A field solve per voltage scenario. Both are TfmrLib's defaults today; set
+            // them so a change of default cannot silently switch the solve.
+            mfemProblem.PhysicsType = PhysicsType.Electrostatics;
+            mfemProblem.AnalysisType = AnalysisType.Field;
+
             // Optional adaptive mesh refinement. Null leaves the solver in its previous
             // single-solve mode; when supplied (and enabled) the solver runs its AMR loop
             // and returns the final refined mesh through the usual results contract.
@@ -954,16 +959,16 @@ namespace electrostat
             void AddScenario(string name, VoltageScenario? scenario)
             {
                 var voltages = _case.EffectiveVoltages(scenario);
-                var excitations = new List<Excitation>(problem.Terminals.Count);
+                var excitations = new List<Excitation>(problem.Terminals.Count());
                 foreach (var terminal in problem.Terminals)
                 {
                     if (string.IsNullOrEmpty(terminal.Name)) continue;
                     var value = voltages.TryGetValue(terminal.Name, out var v) ? v : 0.0;
                     excitations.Add(new Excitation
                     {
-                        Terminal = terminal,
-                        Value = value,
-                        Floating = false
+                        Name = terminal.Name,
+                        TerminalName = terminal.Name,
+                        Magnitude = value,
                     });
                 }
 
