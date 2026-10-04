@@ -7,7 +7,6 @@
     <RootNamespace>StreamlineSmokeTest</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\..\..\TfmrLibrary\src\TfmrLib\TfmrLib.csproj" />
-    <ProjectReference Include="..\..\..\..\GeomLibrary\GeometryLib\GeometryLib.csproj" />
+    <ProjectReference Include="..\..\electrostat.csproj" />
   </ItemGroup>
 </Project>

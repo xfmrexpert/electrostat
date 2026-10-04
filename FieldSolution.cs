@@ -28,17 +28,23 @@ namespace electrostat
         public GmshFile? Mesh { get; init; }
 
         /// <summary>
-        /// Continuous nodal scalar fields (e.g. "V"), keyed by field name, then by node id.
-        /// Only the vertex values of the H1 field are kept, so interpolation inside an
-        /// element is linear on its corners.
+        /// Every field at full order (e.g. "V", "E", "Permittivity"), keyed by field name.
+        /// Use these for point evaluation; the corner-value views below are for drawing.
+        /// </summary>
+        public Dictionary<string, ElementField> Fields { get; init; }
+            = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Continuous nodal scalar fields (e.g. "V") at the mesh vertices, keyed by field
+        /// name, then by node id.
         /// </summary>
         public Dictionary<string, Dictionary<int, double>> NodalScalars { get; init; }
             = new(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
-        /// Per-element fields (e.g. "E", "Permittivity") sampled at each element's corner
-        /// nodes, preserving discontinuities across material interfaces. Indexed as
-        /// [fieldName][elementId].
+        /// Per-element (discontinuous) fields (e.g. "E", "Permittivity") sampled at each
+        /// element's corner nodes, preserving discontinuities across material interfaces.
+        /// Indexed as [fieldName][elementId].
         /// </summary>
         public Dictionary<string, Dictionary<int, ElementNodeField>> ElementNodalFields { get; init; }
             = new(StringComparer.OrdinalIgnoreCase);
@@ -61,6 +67,90 @@ namespace electrostat
             }
             potential = default!;
             return false;
+        }
+    }
+
+    /// <summary>
+    /// A finite-element field over a triangle mesh with a nodal (Lagrange) basis of any
+    /// order: each element's DOFs are the field's values at the basis nodes, which
+    /// <see cref="LagrangeTriangleBasis"/> turns into shape functions.
+    /// </summary>
+    public sealed class ElementField
+    {
+        private readonly int[] _offsets;
+        private readonly int[] _dofs;
+        private readonly double[] _values;
+        private readonly int _scalarDofs;
+        private readonly bool _byNodes;
+        private readonly LagrangeTriangleBasis _basis;
+
+        /// <param name="offsets">CSR offsets into <paramref name="dofs"/>, one per element plus a sentinel.</param>
+        /// <param name="dofs">
+        /// Scalar DOF indices per element, in the basis's node order. A negative entry d
+        /// means DOF -1-d with its sign flipped (MFEM's convention).
+        /// </param>
+        /// <param name="values">Coefficients for all components.</param>
+        /// <param name="components">Vector dimension.</param>
+        /// <param name="byNodes">
+        /// MFEM ordering: true (byNODES) stores component c of DOF d at
+        /// values[c * scalarDofs + d], false (byVDIM) at values[d * components + c].
+        /// </param>
+        public ElementField(string name, LagrangeTriangleBasis basis, int[] offsets, int[] dofs,
+            double[] values, int components, bool byNodes)
+        {
+            Name = name;
+            Components = components;
+            _basis = basis;
+            _offsets = offsets;
+            _dofs = dofs;
+            _values = values;
+            _scalarDofs = values.Length / components;
+            _byNodes = byNodes;
+        }
+
+        public string Name { get; }
+
+        public int Components { get; }
+
+        /// <summary>Polynomial order within an element.</summary>
+        public int Order => _basis.Order;
+
+        public int ElementCount => _offsets.Length - 1;
+
+        /// <summary>
+        /// Evaluate the field in element <paramref name="elementId"/> (1-based, as in
+        /// <see cref="FieldSolution.Mesh"/>) at reference coordinates (xi, eta), i.e. the
+        /// barycentric weights of element vertices 1 and 2.
+        /// </summary>
+        public void Evaluate(int elementId, double xi, double eta, Span<double> result)
+        {
+            int element = elementId - 1;
+            int first = _offsets[element];
+            int count = _offsets[element + 1] - first;
+            if (count != _basis.Count)
+                throw new InvalidOperationException(
+                    $"Element {elementId} of field '{Name}' has {count} DOFs; its basis has {_basis.Count}.");
+
+            Span<double> shape = stackalloc double[count];
+            _basis.Evaluate(xi, eta, shape);
+
+            for (int c = 0; c < Components; c++)
+            {
+                double sum = 0;
+                for (int k = 0; k < count; k++)
+                {
+                    int dof = _dofs[first + k];
+                    double sign = 1;
+                    if (dof < 0)
+                    {
+                        dof = -1 - dof;
+                        sign = -1;
+                    }
+                    double value = _byNodes ? _values[c * _scalarDofs + dof] : _values[dof * Components + c];
+                    sum += sign * value * shape[k];
+                }
+                result[c] = sum;
+            }
         }
     }
 

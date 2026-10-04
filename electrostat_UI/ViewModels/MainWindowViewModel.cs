@@ -1033,6 +1033,11 @@ namespace electrostat_UI.ViewModels
                 case "error":
                     StatusMessage = $"Solver error: {progress.Message}";
                     break;
+                case "diagnostic":
+                    // Raw solver stdout (library banners, per-step detail) that is not part
+                    // of the machine-readable protocol. Too chatty for the status bar.
+                    Console.WriteLine(progress.Message);
+                    break;
             }
         }
 

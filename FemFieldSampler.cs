@@ -1,27 +1,26 @@
 using System;
-using System.Collections.Generic;
 using MeshLib;
 
 namespace electrostat
 {
     /// <summary>
     /// <see cref="IFieldSampler"/> backed by a <see cref="FieldSolution"/>. Locates the
-    /// containing triangle with a <see cref="TriangleLocator"/> and interpolates fields
-    /// using linear (P1) barycentric weights on the three corner nodes.
+    /// containing triangle with a <see cref="TriangleLocator"/> and evaluates the fields at
+    /// their full polynomial order through <see cref="FieldSolution.Fields"/>.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// V is interpolated from the continuous nodal scalar field (typically "V").
+    /// V is the continuous potential (typically "V"). E (typically "E") is evaluated in
+    /// the containing element only, so the discontinuity at material interfaces is
+    /// preserved: the value returned for a point in element <c>k</c> is element
+    /// <c>k</c>'s polynomial, even when that element shares nodes with one in a different
+    /// material. The returned field is in kV/mm (the raw FEM field is V/mm and is scaled
+    /// here).
     /// </para>
     /// <para>
-    /// E is interpolated from <see cref="FieldSolution.ElementNodalFields"/> (typically
-    /// "E") so that the discontinuity at material interfaces is preserved: the value
-    /// returned for a point in element <c>k</c> is the in-element interpolation, even
-    /// when that element shares nodes with one in a different material. E = -grad V of
-    /// the P2 potential is linear in each element, and the reader stores it as exact
-    /// values at the three corners, so barycentric interpolation reproduces it exactly
-    /// on straight-sided triangles. The returned field is in kV/mm (the raw FEM field is
-    /// V/mm and is scaled here).
+    /// The locator's barycentric weights B1 and B2 are the reference coordinates
+    /// (xi, eta) of the point, because the mesh keeps each element's vertices in the
+    /// solver's order. Exact for straight-sided triangles, which electrostat builds.
     /// </para>
     /// <para>
     /// A small per-instance hint is cached so successive calls (e.g. from a streamline
@@ -35,8 +34,8 @@ namespace electrostat
 
         private readonly FieldSolution _solution;
         private readonly TriangleLocator _locator;
-        private readonly Dictionary<int, double>? _potential;
-        private readonly Dictionary<int, ElementNodeField>? _eField;
+        private readonly ElementField? _potential;
+        private readonly ElementField? _eField;
 
         // Mutable hint for sequential queries (not thread-safe; create one sampler per tracer).
         private int _hint;
@@ -48,18 +47,18 @@ namespace electrostat
                 throw new ArgumentException("FieldSolution has no mesh attached.", nameof(solution));
 
             _locator = new TriangleLocator(solution.Mesh);
+            _potential = FindField(solution, 1, "V", "Phi", "Potential");
+            _eField = FindField(solution, 2, "E", "ElectricField", "E_field");
+        }
 
-            if (solution.TryGetPotential(out var pot))
-                _potential = pot;
-
-            foreach (var key in new[] { "E", "ElectricField", "E_field" })
+        private static ElementField? FindField(FieldSolution solution, int minComponents, params string[] names)
+        {
+            foreach (var key in names)
             {
-                if (solution.ElementNodalFields.TryGetValue(key, out var f))
-                {
-                    _eField = f;
-                    break;
-                }
+                if (solution.Fields.TryGetValue(key, out var f) && f.Components >= minComponents)
+                    return f;
             }
+            return null;
         }
 
         /// <summary>The underlying triangle locator (exposed for advanced/testing use).</summary>
@@ -80,18 +79,10 @@ namespace electrostat
             elementId = hit.ElementId;
             materialTag = hit.PhysicalTag;
 
-            if (!_eField.TryGetValue(hit.ElementId, out var field) ||
-                field.NumNodes < 3 || field.NumComponents < 2)
-            {
-                return false;
-            }
-
-            // Area (barycentric) coordinates of the query point. Local node indices 0..2
-            // of the element-nodal field align with the locator's corner nodes N0..N2.
-            double w0 = hit.B0, w1 = hit.B1, w2 = hit.B2;
-
-            ex = w0 * field.Get(0, 0) + w1 * field.Get(1, 0) + w2 * field.Get(2, 0);
-            ey = w0 * field.Get(0, 1) + w1 * field.Get(1, 1) + w2 * field.Get(2, 1);
+            Span<double> e = stackalloc double[_eField.Components];
+            _eField.Evaluate(hit.ElementId, hit.B1, hit.B2, e);
+            ex = e[0];
+            ey = e[1];
 
             // The raw FEM field is V/mm (geometry in mm, potentials in V). Convert to
             // kV/mm here so the whole streamline/stress/margin pipeline works in kV/mm.
@@ -115,14 +106,9 @@ namespace electrostat
             elementId = hit.ElementId;
             materialTag = hit.PhysicalTag;
 
-            if (!_potential.TryGetValue(hit.N0, out double v0) ||
-                !_potential.TryGetValue(hit.N1, out double v1) ||
-                !_potential.TryGetValue(hit.N2, out double v2))
-            {
-                return false;
-            }
-
-            v = hit.B0 * v0 + hit.B1 * v1 + hit.B2 * v2;
+            Span<double> value = stackalloc double[1];
+            _potential.Evaluate(hit.ElementId, hit.B1, hit.B2, value);
+            v = value[0];
             return true;
         }
 

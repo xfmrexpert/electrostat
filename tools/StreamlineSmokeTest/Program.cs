@@ -2,17 +2,27 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using GeometryLib;
-using TfmrLib.FEM;
+using electrostat;
 
-string path = args.Length > 0
-    ? args[0]
-    : @"C:\Users\tcraymond\source\repos\electrostat\bin\Debug\net10.0\Window_Cut__no_adjacent_phase_\geom.results.msh";
+if (args.Length == 0)
+{
+    Console.WriteLine("usage: StreamlineSmokeTest <results.h5> [scenario index]");
+    return 2;
+}
+string path = args[0];
+int scenarioIndex = args.Length > 1 ? int.Parse(args[1]) : 0;
 
 Console.WriteLine($"Loading: {path}");
-var sol = FEMSolution.Load(path);
+var solutions = Hdf5FieldResultsReader.Read(path);
+if (scenarioIndex >= solutions.Count)
+{
+    Console.WriteLine($"FAIL: archive holds {solutions.Count} scenario(s); index {scenarioIndex} requested.");
+    return 1;
+}
+var sol = solutions[scenarioIndex];
+Console.WriteLine($"Scenario: {sol.ScenarioName}");
 Console.WriteLine($"Mesh nodes: {sol.Mesh!.Nodes.Count}, elements: {sol.Mesh.Elements.Count}");
-Console.WriteLine($"Nodal scalar views: [{string.Join(", ", sol.NodalScalars.Keys)}]");
-Console.WriteLine($"Element-nodal views: [{string.Join(", ", sol.ElementNodalFields.Keys)}]");
+Console.WriteLine($"Fields: [{string.Join(", ", sol.Fields.Values.Select(f => $"{f.Name} (order {f.Order}, {f.Components} comp.)"))}]");
 
 if (!sol.TryGetPotential(out var potential))
 {
