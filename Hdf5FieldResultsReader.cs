@@ -65,6 +65,17 @@ namespace electrostat
             var mesh = ReadMesh(meshGroup, out int vertexCount, out int elementCount);
             var spaces = new Dictionary<string, Space>(StringComparer.Ordinal);
 
+            // A curved mesh carries its geometry as a nodal field; straight-sided meshes
+            // have none and their elements are the affine maps of their corners.
+            ElementField? geometry = null;
+            if (meshGroup.LinkExists("nodes"))
+            {
+                geometry = LoadField(file, meshGroup.Group("nodes"), mesh, elementCount, spaces, out _)
+                    ?? throw new InvalidDataException("The curved mesh's node space is not a nodal triangle basis.");
+                if (geometry.Components != 2)
+                    throw new InvalidDataException($"Mesh nodes have {geometry.Components} components; expected 2.");
+            }
+
             var solutions = new List<FieldSolution>();
             if (!file.LinkExists("scenarios"))
                 return solutions;
@@ -83,6 +94,7 @@ namespace electrostat
                         ? scenarioGroup.Attribute("name").Read<string>()
                         : scenarioGroup.Name,
                     Mesh = mesh,
+                    Geometry = geometry,
                 };
 
                 if (scenarioGroup.LinkExists("fields"))
@@ -143,46 +155,21 @@ namespace electrostat
         private static void ReadField(IH5Group file, IH5Group fieldGroup, GmshFile mesh, int vertexCount,
             int elementCount, Dictionary<string, Space> spaces, FieldSolution solution)
         {
-            var dataset = fieldGroup.Dataset("values");
-            var values = dataset.Read<double[]>();
-            string collection = dataset.Attribute("finite_element_collection").Read<string>();
-            int vdim = dataset.Attribute("vector_dimension").Read<int>();
-            bool byNodes = dataset.Attribute("ordering").Read<int>() == OrderingByNodes;
-            string name = fieldGroup.Name;
-
-            Space? space;
-            if (dataset.AttributeExists("space"))
-            {
-                string path = dataset.Attribute("space").Read<string>();
-                if (!spaces.TryGetValue(path, out space))
-                    spaces[path] = space = ReadSpace(file.Group(path), path, elementCount);
-            }
-            else
-            {
-                if (!spaces.TryGetValue(collection, out space))
-                {
-                    space = LegacySpace(collection, mesh, elementCount);
-                    if (space != null) spaces[collection] = space;
-                }
-            }
+            var field = LoadField(file, fieldGroup, mesh, elementCount, spaces, out string collection);
 
             // Unknown representation: skip it rather than fail the whole load, so a solver
             // that starts exporting an extra field does not break existing results.
-            if (space == null) return;
+            if (field == null) return;
 
-            int maxDof = space.Dofs.Length == 0 ? -1 : space.Dofs.Max(d => d < 0 ? -1 - d : d);
-            if ((maxDof + 1) * vdim > values.Length)
-                throw new InvalidDataException(
-                    $"Field '{name}' has {values.Length} values; its space indexes DOF {maxDof} with {vdim} components.");
-
-            var field = new ElementField(name, space.Basis, space.Offsets, space.Dofs, values, vdim, byNodes);
+            string name = field.Name;
+            int vdim = field.Components;
             solution.Fields[name] = field;
 
             // Corner-value views for drawing: continuous fields per vertex, discontinuous
             // ones per element corner.
             Span<double> result = stackalloc double[vdim];
             ReadOnlySpan<(double Xi, double Eta)> corners = [(0, 0), (1, 0), (0, 1)];
-            bool continuous = collection.StartsWith("H1_", StringComparison.Ordinal) && vdim == 1;
+            bool continuous = collection.StartsWith("H1", StringComparison.Ordinal) && vdim == 1;
             var nodal = continuous ? new Dictionary<int, double>(vertexCount) : null;
             var perElement = continuous ? null : new Dictionary<int, ElementNodeField>(elementCount);
             foreach (var element in mesh.Elements)
@@ -204,6 +191,47 @@ namespace electrostat
                 solution.NodalScalars[name] = nodal!;
             else
                 solution.ElementNodalFields[name] = perElement!;
+        }
+
+        /// <summary>
+        /// Build the <see cref="ElementField"/> for a group holding a <c>values</c> dataset
+        /// (a scenario field, or the curved mesh's <c>/mesh/nodes</c>), or null when its
+        /// space cannot be interpreted.
+        /// </summary>
+        private static ElementField? LoadField(IH5Group file, IH5Group fieldGroup, GmshFile mesh,
+            int elementCount, Dictionary<string, Space> spaces, out string collection)
+        {
+            var dataset = fieldGroup.Dataset("values");
+            var values = dataset.Read<double[]>();
+            collection = dataset.Attribute("finite_element_collection").Read<string>();
+            int vdim = dataset.Attribute("vector_dimension").Read<int>();
+            bool byNodes = dataset.Attribute("ordering").Read<int>() == OrderingByNodes;
+            string name = fieldGroup.Name;
+
+            Space? space;
+            if (dataset.AttributeExists("space"))
+            {
+                string path = dataset.Attribute("space").Read<string>();
+                if (!spaces.TryGetValue(path, out space))
+                    spaces[path] = space = ReadSpace(file.Group(path), path, elementCount);
+            }
+            else
+            {
+                if (!spaces.TryGetValue(collection, out space))
+                {
+                    space = LegacySpace(collection, mesh, elementCount);
+                    if (space != null) spaces[collection] = space;
+                }
+            }
+
+            if (space == null) return null;
+
+            int maxDof = space.Dofs.Length == 0 ? -1 : space.Dofs.Max(d => d < 0 ? -1 - d : d);
+            if ((maxDof + 1) * vdim > values.Length)
+                throw new InvalidDataException(
+                    $"Field '{name}' has {values.Length} values; its space indexes DOF {maxDof} with {vdim} components.");
+
+            return new ElementField(name, space.Basis, space.Offsets, space.Dofs, values, vdim, byNodes);
         }
 
         private static Space ReadSpace(IH5Group group, string path, int elementCount)

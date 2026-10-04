@@ -306,12 +306,18 @@ namespace electrostat
         /// to run every scenario against the same mesh in a single solver invocation,
         /// avoiding a gmsh re-mesh per scenario.
         /// </summary>
+        /// <param name="meshOrder">
+        /// Geometric order of the mesh. 2 places mid-edge nodes on the true geometry, so
+        /// fillets and other arcs are curved rather than chorded; the solver then carries
+        /// the curved geometry through to its results.
+        /// </param>
         public static BuiltModel BuildMesh(
             ElectrostatCase _case,
             string caseName,
             double lc = 5.0,
             bool clipToDomain = true,
-            AmrSettings? amr = null)
+            AmrSettings? amr = null,
+            int meshOrder = 1)
         {
             return BuildModel(
                 _case,
@@ -319,7 +325,8 @@ namespace electrostat
                 mshOut: $"{caseName}/geom.msh",
                 clipToDomain: clipToDomain,
                 generateMesh: true,
-                amr: amr);
+                amr: amr,
+                meshOrder: meshOrder);
         }
 
         /// <summary>
@@ -410,7 +417,8 @@ namespace electrostat
             string? mshOut = "msh/geom.msh",
             bool clipToDomain = true,
             bool generateMesh = true,
-            AmrSettings? amr = null)
+            AmrSettings? amr = null,
+            int meshOrder = 1)
         {
             MeshGenerator gmsh = new MeshGenerator();
 
@@ -455,7 +463,7 @@ namespace electrostat
 
             AddScenarios(ctx);
 
-            GenerateMeshPhase(ctx, gmsh, mshOut, lc, generateMesh);
+            GenerateMeshPhase(ctx, gmsh, mshOut, lc, generateMesh, meshOrder);
 
             return new BuiltModel
             {
@@ -992,7 +1000,7 @@ namespace electrostat
         }
 
         /// <summary>Feed the conditioned geometry to gmsh, add distance-based refinement fields, and write the mesh (when requested).</summary>
-        private static void GenerateMeshPhase(BuildContext ctx, MeshGenerator gmsh, string? mshOut, double lc, bool generateMesh)
+        private static void GenerateMeshPhase(BuildContext ctx, MeshGenerator gmsh, string? mshOut, double lc, bool generateMesh, int meshOrder)
         {
             var geometry = ctx.Geom;
             var domain = ctx.Case.Domain;
@@ -1126,7 +1134,7 @@ namespace electrostat
                         sampling: 50);
                 }
 
-                gmsh.GenerateMesh(mshOut, lc);
+                gmsh.GenerateMesh(mshOut, lc, meshOrder);
 
                 problem.MeshPath = mshOut;
             }

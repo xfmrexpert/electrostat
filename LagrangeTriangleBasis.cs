@@ -1,4 +1,5 @@
 using System;
+using System.Numerics;
 using MathNet.Numerics.LinearAlgebra;
 
 namespace electrostat
@@ -16,6 +17,11 @@ namespace electrostat
     /// The shape functions are expanded in the orthogonal Proriol-Koornwinder-Dubiner
     /// basis rather than monomials, which keeps the Vandermonde matrix well conditioned
     /// up to the solver's maximum order.
+    /// </para>
+    /// <para>
+    /// Derivatives are exact to machine precision: the modes are evaluated as
+    /// polynomials, so complex-step differentiation (f'(x) = Im f(x + ih) / h) applies
+    /// with a step far below roundoff and no subtractive cancellation.
     /// </para>
     /// </summary>
     public sealed class LagrangeTriangleBasis
@@ -55,6 +61,30 @@ namespace electrostat
             EvaluateModes(Order, xi, eta, modes);
 
             // phi_k = sum_j Vinv[j, k] * psi_j, so that phi_k(node_i) = (V * Vinv)[i, k] = delta_ik.
+            Combine(modes, shape);
+        }
+
+        /// <summary>
+        /// Derivatives of the shape functions with respect to xi and eta at (xi, eta); both
+        /// spans have length <see cref="Count"/>.
+        /// </summary>
+        public void EvaluateGradient(double xi, double eta, Span<double> dXi, Span<double> dEta)
+        {
+            const double h = 1e-30;
+            Span<Complex> modes = stackalloc Complex[Count];
+            Span<double> modeDerivative = stackalloc double[Count];
+
+            EvaluateModes(Order, new Complex(xi, h), new Complex(eta, 0), modes);
+            for (int j = 0; j < Count; j++) modeDerivative[j] = modes[j].Imaginary / h;
+            Combine(modeDerivative, dXi);
+
+            EvaluateModes(Order, new Complex(xi, 0), new Complex(eta, h), modes);
+            for (int j = 0; j < Count; j++) modeDerivative[j] = modes[j].Imaginary / h;
+            Combine(modeDerivative, dEta);
+        }
+
+        private void Combine(ReadOnlySpan<double> modes, Span<double> shape)
+        {
             for (int k = 0; k < Count; k++)
             {
                 double sum = 0;
@@ -77,45 +107,56 @@ namespace electrostat
         }
 
         /// <summary>
-        /// Proriol-Koornwinder-Dubiner modes psi_ij, i + j &lt;= p, on the collapsed
-        /// coordinates (a, b) of the biunit triangle.
+        /// Proriol-Koornwinder-Dubiner modes psi_ij = P_i(a) * ((1 - b) / 2)^i * P_j^(2i+1,0)(b),
+        /// i + j &lt;= p, on the collapsed coordinates (a, b) of the biunit triangle.
+        /// <para>
+        /// a = 2(1 + r)/(1 - s) - 1 is singular at the apex s = 1, so the first factor is
+        /// computed as one polynomial, q_i = P_i(a) * c^i with c = (1 - b)/2, by the scaled
+        /// Legendre recurrence (a * c = r + (1 + s)/2 needs no division). Evaluating a
+        /// itself would lose the xi-dependence next to the apex.
+        /// </para>
         /// </summary>
-        private static void EvaluateModes(int order, double xi, double eta, Span<double> modes)
+        private static void EvaluateModes<T>(int order, T xi, T eta, Span<T> modes)
+            where T : unmanaged, INumberBase<T>
         {
-            double r = 2 * xi - 1;
-            double s = 2 * eta - 1;
-            double a = Math.Abs(1 - s) < 1e-14 ? -1.0 : 2 * (1 + r) / (1 - s) - 1;
-            double b = s;
-            double collapse = 0.5 * (1 - b);
+            T one = T.One, half = T.CreateChecked(0.5), two = T.CreateChecked(2);
+            T r = two * xi - one;
+            T s = two * eta - one;
+            T c = half * (one - s);
+            T t = r + half * (one + s);
 
-            Span<double> legendre = stackalloc double[order + 1];
-            Span<double> jacobi = stackalloc double[order + 1];
-            Jacobi(order, 0, a, legendre);
+            Span<T> scaledLegendre = stackalloc T[order + 1];
+            scaledLegendre[0] = one;
+            if (order > 0) scaledLegendre[1] = t;
+            for (int n = 1; n < order; n++)
+                scaledLegendre[n + 1] = (T.CreateChecked(2 * n + 1) * t * scaledLegendre[n]
+                    - T.CreateChecked(n) * c * c * scaledLegendre[n - 1]) / T.CreateChecked(n + 1);
 
+            Span<T> jacobi = stackalloc T[order + 1];
             int m = 0;
-            double collapsePower = 1;
             for (int i = 0; i <= order; i++)
             {
-                Jacobi(order - i, 2 * i + 1, b, jacobi);
+                Jacobi(order - i, 2 * i + 1, s, jacobi);
                 for (int j = 0; i + j <= order; j++)
-                    modes[m++] = legendre[i] * collapsePower * jacobi[j];
-                collapsePower *= collapse;
+                    modes[m++] = scaledLegendre[i] * jacobi[j];
             }
         }
 
         /// <summary>Jacobi polynomials P_n^(alpha, 0)(x) for n = 0..maxDegree.</summary>
-        private static void Jacobi(int maxDegree, int alpha, double x, Span<double> values)
+        private static void Jacobi<T>(int maxDegree, int alpha, T x, Span<T> values)
+            where T : unmanaged, INumberBase<T>
         {
-            values[0] = 1;
+            values[0] = T.One;
             if (maxDegree == 0) return;
-            values[1] = 0.5 * ((alpha + 2) * x + alpha);
+            values[1] = T.CreateChecked(0.5) * (T.CreateChecked(alpha + 2) * x + T.CreateChecked(alpha));
             for (int n = 1; n < maxDegree; n++)
             {
                 double twoNAlpha = 2 * n + alpha;
                 double denominator = 2.0 * (n + 1) * (n + alpha + 1) * twoNAlpha;
-                double linear = (twoNAlpha + 1) * ((twoNAlpha + 2) * twoNAlpha * x + alpha * alpha);
-                double previous = 2.0 * (n + alpha) * n * (twoNAlpha + 2);
-                values[n + 1] = (linear * values[n] - previous * values[n - 1]) / denominator;
+                T linear = T.CreateChecked(twoNAlpha + 1)
+                    * (T.CreateChecked((twoNAlpha + 2) * twoNAlpha) * x + T.CreateChecked((double)alpha * alpha));
+                T previous = T.CreateChecked(2.0 * (n + alpha) * n * (twoNAlpha + 2));
+                values[n + 1] = (linear * values[n] - previous * values[n - 1]) / T.CreateChecked(denominator);
             }
         }
     }

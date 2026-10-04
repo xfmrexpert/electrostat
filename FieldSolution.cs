@@ -28,6 +28,13 @@ namespace electrostat
         public GmshFile? Mesh { get; init; }
 
         /// <summary>
+        /// The element geometry of a curved (high-order) mesh: node coordinates as a
+        /// 2-component field, so x(xi, eta) is evaluated like any other field. Null for a
+        /// straight-sided mesh, whose elements are the affine maps of their corners.
+        /// </summary>
+        public ElementField? Geometry { get; init; }
+
+        /// <summary>
         /// Every field at full order (e.g. "V", "E", "Permittivity"), keyed by field name.
         /// Use these for point evaluation; the corner-value views below are for drawing.
         /// </summary>
@@ -124,20 +131,45 @@ namespace electrostat
         /// </summary>
         public void Evaluate(int elementId, double xi, double eta, Span<double> result)
         {
+            int first = ElementDofs(elementId, out int count);
+            Span<double> shape = stackalloc double[count];
+            _basis.Evaluate(xi, eta, shape);
+            Combine(first, shape, result);
+        }
+
+        /// <summary>
+        /// Derivatives of each component with respect to the reference coordinates
+        /// (xi, eta) in element <paramref name="elementId"/>.
+        /// </summary>
+        public void EvaluateReferenceGradient(int elementId, double xi, double eta,
+            Span<double> dXi, Span<double> dEta)
+        {
+            int first = ElementDofs(elementId, out int count);
+            Span<double> shapeXi = stackalloc double[count];
+            Span<double> shapeEta = stackalloc double[count];
+            _basis.EvaluateGradient(xi, eta, shapeXi, shapeEta);
+            Combine(first, shapeXi, dXi);
+            Combine(first, shapeEta, dEta);
+        }
+
+        private int ElementDofs(int elementId, out int count)
+        {
             int element = elementId - 1;
             int first = _offsets[element];
-            int count = _offsets[element + 1] - first;
+            count = _offsets[element + 1] - first;
             if (count != _basis.Count)
                 throw new InvalidOperationException(
                     $"Element {elementId} of field '{Name}' has {count} DOFs; its basis has {_basis.Count}.");
+            return first;
+        }
 
-            Span<double> shape = stackalloc double[count];
-            _basis.Evaluate(xi, eta, shape);
-
+        /// <summary>result[c] = sum_k sign_k * value(dof_k, c) * weights[k].</summary>
+        private void Combine(int first, ReadOnlySpan<double> weights, Span<double> result)
+        {
             for (int c = 0; c < Components; c++)
             {
                 double sum = 0;
-                for (int k = 0; k < count; k++)
+                for (int k = 0; k < weights.Length; k++)
                 {
                     int dof = _dofs[first + k];
                     double sign = 1;
@@ -147,7 +179,7 @@ namespace electrostat
                         sign = -1;
                     }
                     double value = _byNodes ? _values[c * _scalarDofs + dof] : _values[dof * Components + c];
-                    sum += sign * value * shape[k];
+                    sum += sign * value * weights[k];
                 }
                 result[c] = sum;
             }
