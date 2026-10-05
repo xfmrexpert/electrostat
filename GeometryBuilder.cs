@@ -307,9 +307,10 @@ namespace electrostat
         /// avoiding a gmsh re-mesh per scenario.
         /// </summary>
         /// <param name="meshOrder">
-        /// Geometric order of the mesh. 2 places mid-edge nodes on the true geometry, so
-        /// fillets and other arcs are curved rather than chorded; the solver then carries
-        /// the curved geometry through to its results.
+        /// Geometric order of the mesh. 2 (the default) places mid-edge nodes on the true
+        /// geometry, so fillets and other arcs are curved rather than chorded; the solver
+        /// then carries the curved geometry through to its results. Needs a GeomLibrary
+        /// that reads second-order Gmsh meshes back.
         /// </param>
         public static BuiltModel BuildMesh(
             ElectrostatCase _case,
@@ -317,7 +318,7 @@ namespace electrostat
             double lc = 5.0,
             bool clipToDomain = true,
             AmrSettings? amr = null,
-            int meshOrder = 1)
+            int meshOrder = 2)
         {
             return BuildModel(
                 _case,
@@ -418,7 +419,7 @@ namespace electrostat
             bool clipToDomain = true,
             bool generateMesh = true,
             AmrSettings? amr = null,
-            int meshOrder = 1)
+            int meshOrder = 2)
         {
             MeshGenerator gmsh = new MeshGenerator();
 

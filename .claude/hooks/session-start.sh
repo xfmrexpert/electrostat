@@ -17,9 +17,27 @@ if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
   exit 0
 fi
 
-if ! command -v dotnet >/dev/null 2>&1; then
+# gmsh: GeomLibrary sets options (e.g. Mesh.MinCurveNodes) that Ubuntu's gmsh
+# 4.12 rejects, so use the 4.15 wheel from PyPI (reachable; it installs
+# /usr/local/bin/gmsh, ahead of /usr/bin on PATH). The wheel's libgmsh links
+# against X11/OpenGL runtime libraries even when run headless.
+GMSH_VERSION="4.15"
+need_gmsh=true
+if command -v gmsh >/dev/null 2>&1 && gmsh --version 2>&1 | grep -q "^${GMSH_VERSION}\."; then
+  need_gmsh=false
+fi
+
+if ! command -v dotnet >/dev/null 2>&1 || [ "$need_gmsh" = true ]; then
   apt-get update -qq
+fi
+if ! command -v dotnet >/dev/null 2>&1; then
   DEBIAN_FRONTEND=noninteractive apt-get install -y -qq dotnet-sdk-10.0
+fi
+if [ "$need_gmsh" = true ]; then
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+    libglu1-mesa libxcursor1 libxft2 libxinerama1 libxrender1 libfontconfig1
+  pip install -q "gmsh==${GMSH_VERSION}.*" 2>/dev/null \
+    || pip install -q --break-system-packages "gmsh==${GMSH_VERSION}.*"
 fi
 
 # The project references (..\..\GeomLibrary, ..\..\TfmrLibrary) assume this
@@ -46,3 +64,4 @@ done
 dotnet restore "$project_dir/electrostat.slnx" || true
 
 dotnet --version
+gmsh --version 2>&1 | tail -1
