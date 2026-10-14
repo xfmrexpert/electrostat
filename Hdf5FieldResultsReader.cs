@@ -8,8 +8,8 @@ using PureHDF;
 namespace electrostat
 {
     /// <summary>
-    /// Reads the per-scenario fields of an MFEM-ElectroMag field-analysis HDF5 archive
-    /// (schema version 2; see MFEM-ElectroMag's docs/coupling_hdf5.md) into
+    /// Reads the per-scenario fields of an Noumena field-analysis HDF5 archive
+    /// (schema version 2; see Noumena's docs/coupling_hdf5.md) into
     /// <see cref="FieldSolution"/>s.
     /// <para>
     /// The archive stores native finite-element coefficients, not values at mesh nodes.

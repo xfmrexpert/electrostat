@@ -367,7 +367,7 @@ namespace electrostat
         private sealed class BuildContext
         {
             public required ElectrostatCase Case;
-            public required MFEMProblem Problem;
+            public required NoumenaProblem Problem;
             public required Geometry Geom;
             public TagManager Tags = new();
             public Material Oil = null!;
@@ -424,27 +424,27 @@ namespace electrostat
             MeshGenerator gmsh = new MeshGenerator();
 
             var geometry = new Geometry();
-            var mfemProblem = new MFEMProblem();
+            var noumenaProblem = new NoumenaProblem();
 
             // Carry the case's coordinate system through to the solver. The mesh / geometry
             // is identical across geometry types (only this flag varies per cut), so the
             // same build feeds an axisymmetric (r–z) or planar solve unchanged.
-            mfemProblem.GeometryType = _case.GeometryType;
+            noumenaProblem.GeometryType = _case.GeometryType;
 
             // A field solve per voltage scenario. Both are TfmrLib's defaults today; set
             // them so a change of default cannot silently switch the solve.
-            mfemProblem.PhysicsType = PhysicsType.Electrostatics;
-            mfemProblem.AnalysisType = AnalysisType.Field;
+            noumenaProblem.PhysicsType = PhysicsType.Electrostatics;
+            noumenaProblem.AnalysisType = AnalysisType.Field;
 
             // Optional adaptive mesh refinement. Null leaves the solver in its previous
             // single-solve mode; when supplied (and enabled) the solver runs its AMR loop
             // and returns the final refined mesh through the usual results contract.
-            mfemProblem.Amr = amr;
+            noumenaProblem.Amr = amr;
 
             var ctx = new BuildContext
             {
                 Case = _case,
-                Problem = mfemProblem,
+                Problem = noumenaProblem,
                 Geom = geometry,
             };
 
@@ -469,7 +469,7 @@ namespace electrostat
             return new BuiltModel
             {
                 Geometry = geometry,
-                Problem = mfemProblem,
+                Problem = noumenaProblem,
                 ComponentSurfaces = ctx.ComponentSurfaces,
                 ElectrodeSurfaces = ctx.ElectrodeSurfaces,
                 DirichletWallLoops = ctx.DirichletWallLoops,

@@ -96,7 +96,7 @@ namespace electrostat_UI.ViewModels
 
         /// <summary>
         /// When true, the next solve requests adaptive mesh refinement (AMR) from the
-        /// MFEM-ElectroMag solver: it refines the mesh around divergent fields (conductor
+        /// Noumena solver: it refines the mesh around divergent fields (conductor
         /// corners) until its error/iteration/DOF criteria are met, improving |E| / stress
         /// accuracy. On by default now that the solver supports AMR; the Run-menu toggle
         /// can disable it to fall back to the single-solve path.
@@ -955,7 +955,7 @@ namespace electrostat_UI.ViewModels
             SolveOperationText = hasScenarios
                 ? $"Solving {label} — {total} scenarios"
                 : $"Solving {label}";
-            var progress = new Progress<MFEMProgressEvent>(ReportSolverProgress);
+            var progress = new Progress<NoumenaProgressEvent>(ReportSolverProgress);
             await Task.Run(() => builtModel.Solve(progress));
 
             var results = new List<ScenarioResult>(builtModel.ScenarioSolutions.Count);
@@ -986,7 +986,7 @@ namespace electrostat_UI.ViewModels
             return results;
         }
 
-        private void ReportSolverProgress(MFEMProgressEvent progress)
+        private void ReportSolverProgress(NoumenaProgressEvent progress)
         {
             if (!Dispatcher.UIThread.CheckAccess())
             {
@@ -994,7 +994,7 @@ namespace electrostat_UI.ViewModels
                 return;
             }
 
-            if (progress.EventType == MFEMProgressEventType.Operation)
+            if (progress.EventType == NoumenaProgressEventType.Operation)
             {
                 if (string.IsNullOrWhiteSpace(progress.Name)) return;
 

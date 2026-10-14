@@ -96,7 +96,7 @@ namespace electrostat
 
         /// <summary>
         /// Why the most recent <see cref="Solve"/> could not load results, or null when it
-        /// loaded them. Use this rather than <see cref="MFEMProblem.LastLoadError"/>: TfmrLib's
+        /// loaded them. Use this rather than <see cref="NoumenaProblem.LastLoadError"/>: TfmrLib's
         /// reader only understands coupling-matrix archives and reports a spurious failure
         /// for every field run.
         /// </summary>
@@ -116,41 +116,41 @@ namespace electrostat
         /// human-readable physical names populated). The solver writes one HDF5 archive,
         /// "results.h5" next to the mesh, holding every scenario. Returns 0.
         /// </summary>
-        public int Solve(IProgress<MFEMProgressEvent>? progress = null)
+        public int Solve(IProgress<NoumenaProgressEvent>? progress = null)
         {
             ScenarioSolutions.Clear();
             LoadError = null;
 
             var problem = Problem;
             if (problem == null) return -1;
-            var mfem = problem as MFEMProblem;
+            var noumena = problem as NoumenaProblem;
 
             // Co-locate the input deck and the results archive with the mesh so every
-            // build's files sit together. The results path must be absolute: MFEMProblem
+            // build's files sit together. The results path must be absolute: NoumenaProblem
             // resolves a relative one against the deck's folder when writing it, but checks
             // it as-is when loading.
             var meshDir = !string.IsNullOrEmpty(problem.MeshPath)
                 ? Path.GetDirectoryName(Path.GetFullPath(problem.MeshPath))
                 : null;
             string? resultsFile = null;
-            if (mfem != null && !string.IsNullOrEmpty(meshDir))
+            if (noumena != null && !string.IsNullOrEmpty(meshDir))
             {
-                mfem.Filename = Path.Combine(meshDir, "case.json");
+                noumena.Filename = Path.Combine(meshDir, "case.json");
                 resultsFile = Path.Combine(meshDir, "results.h5");
-                mfem.ResultsFile = resultsFile;
+                noumena.ResultsFile = resultsFile;
 
                 // Never load a previous run's archive if this solve fails to write one.
                 if (File.Exists(resultsFile))
                     File.Delete(resultsFile);
             }
 
-            // Run once: MFEMProblem writes all Scenarios to its case.json and the solver
+            // Run once: NoumenaProblem writes all Scenarios to its case.json and the solver
             // evaluates them all, reusing the factorized system between permutations.
-            Action<MFEMProgressEvent>? progressHandler = progress == null
+            Action<NoumenaProgressEvent>? progressHandler = progress == null
                 ? null
                 : e => { if (!IsSpuriousLoadError(e)) progress.Report(e); };
-            if (mfem != null && progressHandler != null)
-                mfem.ProgressChanged += progressHandler;
+            if (noumena != null && progressHandler != null)
+                noumena.ProgressChanged += progressHandler;
 
             try
             {
@@ -158,11 +158,11 @@ namespace electrostat
             }
             finally
             {
-                if (mfem != null && progressHandler != null)
-                    mfem.ProgressChanged -= progressHandler;
+                if (noumena != null && progressHandler != null)
+                    noumena.ProgressChanged -= progressHandler;
             }
 
-            // MFEMProblem.Results is ignored: TfmrLib's reader handles coupling-matrix
+            // NoumenaProblem.Results is ignored: TfmrLib's reader handles coupling-matrix
             // archives only. Read the scenario fields here instead.
             var loaded = new List<FieldSolution>();
             if (resultsFile == null)
@@ -181,7 +181,7 @@ namespace electrostat
                 }
             }
             if (LoadError != null)
-                progress?.Report(new MFEMProgressEvent(MFEMProgressEventType.Message, Level: "error", Message: LoadError));
+                progress?.Report(new NoumenaProgressEvent(NoumenaProgressEventType.Message, Level: "error", Message: LoadError));
 
             foreach (var sol in loaded)
                 PopulatePhysicalNames(sol);
@@ -211,12 +211,12 @@ namespace electrostat
         }
 
         /// <summary>
-        /// MFEMProblem tries to load every results archive with TfmrLib's coupling-matrix
+        /// NoumenaProblem tries to load every results archive with TfmrLib's coupling-matrix
         /// reader, which fails on a field run and reports it as an error. Electrostat loads
         /// the archive itself and reports its own failures, so drop those messages.
         /// </summary>
-        private static bool IsSpuriousLoadError(MFEMProgressEvent e) =>
-            e.EventType == MFEMProgressEventType.Message &&
+        private static bool IsSpuriousLoadError(NoumenaProgressEvent e) =>
+            e.EventType == NoumenaProgressEventType.Message &&
             e.Level == "error" &&
             e.Message != null &&
             (e.Message.StartsWith("Failed to load FEM results from", StringComparison.Ordinal) ||

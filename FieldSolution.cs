@@ -5,7 +5,7 @@ using MeshLib;
 namespace electrostat
 {
     /// <summary>
-    /// One scenario's electrostatic field as loaded from the MFEM-ElectroMag HDF5 results
+    /// One scenario's electrostatic field as loaded from the Noumena HDF5 results
     /// archive (see <see cref="Hdf5FieldResultsReader"/>). Replaces TfmrLib's former
     /// <c>FEMSolution</c>, keeping the same shape so the sampler, results view, and
     /// streamline code are unchanged.
