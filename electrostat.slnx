@@ -4,4 +4,5 @@
   <Project Path="../../TfmrLibrary/src/TfmrLib/TfmrLib.csproj" />
   <Project Path="electrostat.csproj" />
   <Project Path="electrostat_UI/electrostat_UI.csproj" Id="574f30a7-4aa8-4c0c-ba20-9745a1554091" />
+  <Project Path="tests/electrostat.Tests/electrostat.Tests.csproj" />
 </Solution>
