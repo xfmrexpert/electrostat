@@ -3,13 +3,8 @@
 ################################################################################
 
 /.vs/electrostat.slnx
-/obj
 /.vs
-/bin/Debug/net10.0
-/electrostat_UI/bin/Debug/net10.0
-/electrostat_UI/obj
-/tools/StreamlineSmokeTest/bin/Debug/net10.0
-/tools/StreamlineSmokeTest/obj
-/tests/electrostat.Tests/bin
-/tests/electrostat.Tests/obj
+# Build output of every project, in any configuration.
+bin/
+obj/
 /TestResults

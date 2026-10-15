@@ -1,0 +1,114 @@
+# Packages the electrostat UI for Linux and Windows.
+#
+# A version tag (v*) publishes both packages to a GitHub release for that tag,
+# creating the release if it does not exist yet. A manual run only uploads them
+# as workflow artifacts. Either way, the Build workflow (unit tests on Linux and
+# Windows, and the end-to-end solve) must pass first.
+#
+# The packages are self-contained .NET publishes. gmsh and Noumena are not
+# bundled; packaging/README.md, shipped in each package, says where to get them.
+
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  checks:
+    uses: ./.github/workflows/build.yml
+
+  package:
+    name: Package (${{ matrix.rid }})
+    needs: checks
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - rid: linux-x64
+            platform: linux-x86_64
+          - rid: win-x64
+            platform: windows-x86_64
+
+    steps:
+      - name: Check out electrostat
+        uses: actions/checkout@v5
+        with:
+          path: src/electrostat
+
+      - name: Check out GeomLibrary
+        uses: actions/checkout@v5
+        with:
+          repository: Inductive-Reasoning/GeomLibrary
+          path: GeomLibrary
+
+      - name: Check out TfmrLibrary
+        uses: actions/checkout@v5
+        with:
+          repository: Inductive-Reasoning/TfmrLibrary
+          path: TfmrLibrary
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish
+        working-directory: src/electrostat
+        run: >-
+          dotnet publish electrostat_UI/electrostat_UI.csproj
+          --configuration Release --runtime ${{ matrix.rid }} --self-contained
+          --output "$RUNNER_TEMP/publish"
+
+      # Package name: electrostat-<tag>-<platform>, or the short commit hash for a
+      # manual run. The library commits are recorded in the package, since the
+      # build depends on their default branches at the time of the run.
+      - name: Package
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then version="$GITHUB_REF_NAME"; else version="${GITHUB_SHA::7}"; fi
+          name="electrostat-${version}-${{ matrix.platform }}"
+          stage="$RUNNER_TEMP/$name"
+          mkdir -p "$stage" packages
+          cp -r "$RUNNER_TEMP/publish/." "$stage/"
+          cp src/electrostat/packaging/README.md "$stage/"
+          {
+            echo "electrostat: $(git -C src/electrostat log -1 --format='%h %s')"
+            echo "GeomLibrary: $(git -C GeomLibrary log -1 --format='%h %s')"
+            echo "TfmrLibrary: $(git -C TfmrLibrary log -1 --format='%h %s')"
+          } > "$stage/BUILD_INFO.txt"
+          cat "$stage/BUILD_INFO.txt"
+          if [[ "${{ matrix.rid }}" == win-* ]]; then
+            (cd "$RUNNER_TEMP" && zip -qr "$GITHUB_WORKSPACE/packages/$name.zip" "$name")
+          else
+            tar -C "$RUNNER_TEMP" -czf "packages/$name.tar.gz" "$name"
+          fi
+          ls -l packages
+
+      - name: Upload package
+        uses: actions/upload-artifact@v7
+        with:
+          name: package-${{ matrix.platform }}
+          path: packages/*
+
+  publish:
+    name: Publish release
+    needs: package
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download packages
+        uses: actions/download-artifact@v7
+        with:
+          pattern: package-*
+          path: packages
+          merge-multiple: true
+
+      - name: Attach to the release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: packages/*
+          generate_release_notes: true

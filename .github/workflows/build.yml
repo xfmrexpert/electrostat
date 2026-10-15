@@ -11,15 +11,28 @@
 # The libraries are built from the head of their default branches. The nightly
 # run catches a library change that breaks electrostat even when electrostat
 # itself has not changed.
+#
+# The end-to-end job meshes and solves a real case with gmsh and a released
+# Noumena build (NOUMENA_VERSION below), so it also catches a solver release
+# whose results electrostat cannot read. The release workflow calls this one
+# and only publishes when both jobs pass.
 
 name: Build
 
 on:
   push:
+    # Tags are built by the Release workflow, which runs this one first.
+    branches: ['**']
   pull_request:
   workflow_dispatch:
+  workflow_call:
   schedule:
     - cron: '17 6 * * *'
+
+env:
+  # Noumena release used by the end-to-end job. v0.1.1 is the first that exports
+  # the FE spaces and curved geometry electrostat reads.
+  NOUMENA_VERSION: v0.1.1
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -88,4 +101,84 @@ jobs:
         with:
           name: test-results-${{ matrix.os }}
           path: src/electrostat/TestResults
+          if-no-files-found: ignore
+
+  end-to-end:
+    name: End-to-end (mesh, solve, read)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out electrostat
+        uses: actions/checkout@v5
+        with:
+          path: src/electrostat
+
+      - name: Check out GeomLibrary
+        uses: actions/checkout@v5
+        with:
+          repository: Inductive-Reasoning/GeomLibrary
+          path: GeomLibrary
+
+      - name: Check out TfmrLibrary
+        uses: actions/checkout@v5
+        with:
+          repository: Inductive-Reasoning/TfmrLibrary
+          path: TfmrLibrary
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      # GeomLibrary sets mesh options that Ubuntu's gmsh (4.12) rejects, so use
+      # the PyPI build, the version tested with electrostat. Its libgmsh links against
+      # X11/OpenGL runtime libraries even when run headless.
+      - name: Install gmsh
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libglu1-mesa libxcursor1 libxft2 libxinerama1 libxrender1 libfontconfig1
+          python -m pip install "gmsh==4.15.*"
+          echo "GMSH_PATH=$(command -v gmsh)" >> "$GITHUB_ENV"
+          gmsh --version 2>&1 | tail -1
+
+      - name: Install Noumena ${{ env.NOUMENA_VERSION }}
+        run: |
+          package="noumena-${NOUMENA_VERSION}-linux-x86_64"
+          curl -fsSL -o noumena.tar.gz \
+            "https://github.com/Inductive-Reasoning/Noumena/releases/download/${NOUMENA_VERSION}/${package}.tar.gz"
+          tar xzf noumena.tar.gz
+          echo "NOUMENA_EXE=$PWD/${package}/bin/noumena" >> "$GITHUB_ENV"
+
+      - name: Build the checks
+        working-directory: src/electrostat
+        run: |
+          dotnet build tools/EndToEndCheck --configuration Release
+          dotnet build tools/StreamlineSmokeTest --configuration Release
+
+      # GeomLibrary looks for gmsh in bin folders relative to the working
+      # directory before PATH; GMSH_PATH above pins the one installed here.
+      - name: Mesh, solve and check
+        working-directory: src/electrostat
+        run: >-
+          dotnet run --no-build --configuration Release --project tools/EndToEndCheck
+          -- "$RUNNER_TEMP/e2e"
+
+      - name: Trace streamlines through the solved fields
+        working-directory: src/electrostat
+        run: >-
+          dotnet run --no-build --configuration Release --project tools/StreamlineSmokeTest
+          -- "$RUNNER_TEMP/e2e/results.h5"
+
+      - name: Upload the case on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: end-to-end-case
+          path: ${{ runner.temp }}/e2e
           if-no-files-found: ignore

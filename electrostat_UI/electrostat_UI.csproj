@@ -30,4 +30,18 @@
   <ItemGroup>
     <ProjectReference Include="..\electrostat.csproj" />
   </ItemGroup>
+
+  <!--
+    Keep published packages lean. TfmrLib references MathNet's MKL provider, whose
+    Windows runtime is a 160 MB native library that electrostat never loads (MKL is
+    only used when enabled with Control.UseNativeMKL). Debug symbols that packages
+    ship alongside their native libraries (SkiaSharp's alone are 100 MB) are dropped
+    too.
+  -->
+  <Target Name="TrimPublishedFiles" AfterTargets="ComputeResolvedFilesToPublishList">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+                             Condition="'%(Filename)' == 'libMathNetNumericsMKL' Or '%(Extension)' == '.pdb'" />
+    </ItemGroup>
+  </Target>
 </Project>
